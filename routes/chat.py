@@ -134,11 +134,13 @@ async def chat_stream(request: ChatRequest):
                     return
 
                 elif step.action == FlowAction.STREAM_RESPONSE:
-                    # Emit search completed status
-                    yield send_sse_event("status", {
-                        "stage": "search_completed",
-                        "source": step.search_result.source_url
-                    })
+                    if step.search_result.performed and step.search_result.source_url:
+                        source_domain = ChatService.extract_domain(step.search_result.source_url)
+                        if source_domain:
+                            yield send_sse_event("status", {
+                                "stage": "reading_content",
+                                "message": f"Reading content from {source_domain}"
+                            })
 
                     # Stream final response
                     yield send_sse_event("status", {"stage": "generating"})

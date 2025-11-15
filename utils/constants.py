@@ -68,15 +68,16 @@ GOOGLE: latest news on apple stock"""
 # System prompt when providing search results
 SEARCH_RESULT_SYSTEM_PROMPT = """You are a conversational chat assistant.
 Today's Date: {current_date}
-The user asked a question that required up-to-date information. The following data was web scraped:
 
+The user asked a question that required up-to-date information. PRIORITIZE the current information gathered to respond but you can supplement some knowledge you already have. 
+he following data was scraped from the internet just now:
 ---
 {search_results}
 ---
 
 INSTRUCTIONS:
-- Synthesize the information above to provide a comprehensive natural answer
-- You can supplement with your general knowledge, but prioritize the current information provided"""
+- Synthesize the information above to provide a natural answer.
+- Keep responses concise and conversational, which users can read under a minute. MAXIMUM 400 words."""
 
 
 # Search type constants

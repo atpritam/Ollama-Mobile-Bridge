@@ -30,11 +30,23 @@ class Config:
     WEATHER_TIMEOUT: float = 10.0
     WEB_SCRAPING_TIMEOUT: float = 10.0
 
-    # Content web Limits (default)
-    MAX_HTML_TEXT_LENGTH: int = 4000
-
     # Small model detection in b parameters (default)
     SMALL_MODEL_THRESHOLD: float = 4.0
+
+    # Content web Limits per scape (default)
+    MAX_HTML_TEXT_LENGTH: int = 4000
+
+    # Dynamic Scraping Configuration
+    # Format: (min_param_size, max_content_chars, google_pages, reddit_threads, wikipedia_articles)
+    SCRAPING_CONFIG = [
+        (12, 15000, 3, 6, 2),
+        (7,  10000, 2, 5, 2),
+        (4,  8000,  2, 4, 1),
+        (0,  6000,  1, 3, 1),
+    ]
+
+    # Minimum characters for additional summaries
+    MIN_SUMMARY_CHARS: int = 2500
 
     @classmethod
     def extract_model_param_size(cls, model_name: str) -> float | None:
@@ -63,12 +75,39 @@ class Config:
 
     @classmethod
     def get_max_html_text_length(cls, model_name: str) -> int:
-        """Get the MAX_HTML_TEXT_LENGTH based on model parameter size."""
+        """
+        Get the MAX_HTML_TEXT_LENGTH based on model parameter size.
+        Uses SCRAPING_CONFIG table.
+        """
         param_size = cls.extract_model_param_size(model_name)
         if param_size is not None:
-            return 8000 if param_size >= 12 else 4000
+            for min_size, max_content, *_ in cls.SCRAPING_CONFIG:
+                if param_size >= min_size:
+                    return max_content
 
         return cls.MAX_HTML_TEXT_LENGTH
+
+    @classmethod
+    def get_scrape_count(cls, model_name: str, search_type: str) -> int:
+        """
+        Get number of pages to scrape based on model size and search type.
+        Uses SCRAPING_CONFIG table.
+        """
+        param_size = cls.extract_model_param_size(model_name) or 3
+
+        type_index = {
+            'google': 2,
+            'reddit': 3,
+            'wikipedia': 4
+        }
+
+        idx = type_index.get(search_type, 2)
+
+        for row in cls.SCRAPING_CONFIG:
+            if param_size >= row[0]:
+                return row[idx]
+
+        return 1
 
     @classmethod
     def validate(cls) -> None:
@@ -80,6 +119,5 @@ class Config:
         if not cls.OPENWEATHER_API_KEY:
             print("   WARNING: OPENWEATHER_API_KEY not found in .env file")
             print("   Weather queries will use web scraping fallback. Get free key from: https://openweathermap.org/api")
-
 
 Config.validate()

@@ -2,6 +2,7 @@
 Web search service using Brave Search API with content scraping.
 """
 from typing import Tuple, Optional, List, Dict, Any, TYPE_CHECKING
+import asyncio
 import httpx
 
 from config import Config
@@ -126,6 +127,7 @@ class SearchService:
         """
         results = []
         source_url = None
+        source_urls = []
 
         # Infobox/Featured snippet
         if data.get("infobox"):
@@ -137,11 +139,17 @@ class SearchService:
         if data.get("web") and data["web"].get("results"):
             web_results = data["web"]["results"]
 
-            # For Reddit: scrape multiple threads
-            if search_type == SearchType.REDDIT:
-                reddit_results = [r for r in web_results[:8] if "reddit.com" in r.get("url", "")][:3]
+            # Dynamic multi-page scraping based on search type and model size
+            scrape_count_target = self._get_scrape_count(search_type)
+            max_total_length = self._get_max_content_length(search_type)
+            max_length_per_page = max_total_length // scrape_count_target if scrape_count_target > 0 else max_total_length
 
-                scraped_count = 0
+            if search_type == SearchType.REDDIT:
+                # Reddit:
+                reddit_results = [r for r in web_results[:8] if "reddit.com" in r.get("url", "")][:scrape_count_target]
+
+                scrape_tasks = []
+                task_urls = []  # Track URLs for each task
                 for idx, result in enumerate(reddit_results):
                     result_url = result.get("url")
                     if not result_url:
@@ -150,40 +158,114 @@ class SearchService:
                     if source_url is None:
                         source_url = result_url
 
-                    scraped_content = await self._scrape_page(
-                        client, result_url, result.get('title', f'Reddit thread {idx+1}'), search_type
+                    task = self._scrape_page(
+                        client, result_url, result.get('title', f'Reddit thread {idx+1}'), search_type, max_length_per_page
                     )
+                    scrape_tasks.append(task)
+                    task_urls.append(result_url)
 
-                    if scraped_content:
-                        results.append(scraped_content)
+                scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
+
+                scraped_count = 0
+                for idx, content in enumerate(scraped_contents):
+                    if content and not isinstance(content, Exception):
+                        results.append(content)
+                        source_urls.append(task_urls[idx])
                         scraped_count += 1
 
-                app_logger.info(f"Scraped {scraped_count} Reddit threads for diverse opinions")
+                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Reddit threads in parallel")
+
+            elif search_type == SearchType.WIKIPEDIA:
+                # Wikipedia:
+                wiki_results = [r for r in web_results[:5] if "wikipedia.org" in r.get("url", "")][:scrape_count_target]
+
+                if not wiki_results:
+                    wiki_results = web_results[:scrape_count_target]
+
+                scrape_tasks = []
+                task_urls = []
+                for idx, result in enumerate(wiki_results):
+                    result_url = result.get("url")
+                    if not result_url:
+                        continue
+
+                    if source_url is None:
+                        source_url = result_url
+
+                    task = self._scrape_page(
+                        client, result_url, result.get('title', f'Article {idx+1}'), search_type, max_length_per_page
+                    )
+                    scrape_tasks.append(task)
+                    task_urls.append(result_url)
+
+                scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
+
+                scraped_count = 0
+                for idx, content in enumerate(scraped_contents):
+                    if content and not isinstance(content, Exception):
+                        results.append(content)
+                        source_urls.append(task_urls[idx])
+                        scraped_count += 1
+
+                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Wikipedia articles in parallel")
 
             else:
-                target_result = self._select_best_result(web_results, search_type)
+                # Google:
+                google_results = web_results[:scrape_count_target]
 
-                if target_result:
-                    target_url = target_result.get("url")
-                    source_url = target_url
+                scrape_tasks = []
+                task_urls = []
+                for idx, result in enumerate(google_results):
+                    result_url = result.get("url")
+                    if not result_url:
+                        continue
 
-                    if target_url:
-                        scraped_content = await self._scrape_page(
-                            client, target_url, target_result.get('title', 'top result'), search_type
-                        )
-                        if scraped_content:
-                            results.append(scraped_content)
+                    if source_url is None:
+                        source_url = result_url
 
+                    task = self._scrape_page(
+                        client, result_url, result.get('title', f'Result {idx+1}'), search_type, max_length_per_page
+                    )
+                    scrape_tasks.append(task)
+                    task_urls.append(result_url)
+
+                scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
+
+                scraped_count = 0
+                for idx, content in enumerate(scraped_contents):
+                    if content and not isinstance(content, Exception):
+                        results.append(content)
+                        source_urls.append(task_urls[idx])
+                        scraped_count += 1
+
+                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Google pages in parallel")
+
+        # Additional search results (Brave summaries)
         if data.get("web") and data["web"].get("results"):
             display_count = self._get_result_count_for_display(search_type)
             web_results = self._format_web_results(data["web"]["results"], display_count)
             if web_results:
-                results.append("Additional Search Results:\n" + "\n\n".join(web_results))
+                dedicated_content = "\n\n".join(results)
+                dedicated_chars = len(dedicated_content)
+                max_length = self._get_max_content_length(search_type)
+                remaining_budget = max_length - dedicated_chars
+                summary_limit = max(remaining_budget, Config.MIN_SUMMARY_CHARS)
+
+                summaries_text = "Additional Search Results:\n" + "\n\n".join(web_results)
+                if len(summaries_text) > summary_limit:
+                    summaries_text = summaries_text[:summary_limit]
+                    last_period = summaries_text.rfind('.')
+                    if last_period > summary_limit * 0.8:
+                        summaries_text = summaries_text[:last_period + 1]
+
+                app_logger.info(f"Appending additional summaries {len(summaries_text)} chars")
+                results.append(summaries_text)
 
         if results:
             combined_results = "\n\n".join(results)
-            app_logger.info(f"Returning {len(combined_results)} chars total to LLM ({len(results)} content sections)")
-            return combined_results, source_url
+            final_source = ", ".join(source_urls) if source_urls else source_url
+            app_logger.info(f"Injecting {len(combined_results)} chars total to LLM ({len(results)} content sections)")
+            return combined_results, final_source
         else:
             return "No results found.", None
 
@@ -219,7 +301,7 @@ class SearchService:
 
         return results[0]
 
-    async def _scrape_page(self, client: httpx.AsyncClient, url: str, title: str, search_type: str) -> Optional[str]:
+    async def _scrape_page(self, client: httpx.AsyncClient, url: str, title: str, search_type: str, max_length: Optional[int] = None) -> Optional[str]:
         """
         Scrape content from a webpage with type-specific handling.
         Falls back to Jina Reader for JavaScript-heavy sites.
@@ -229,6 +311,7 @@ class SearchService:
             url: URL to scrape
             title: Title of the page
             search_type: Type of search to optimize content extraction
+            max_length: Maximum content length
 
         Returns:
             Scraped content or None if scraping fails
@@ -248,8 +331,9 @@ class SearchService:
                     search_type = "Wikipedia"
                 elif "reddit.com" in url:
                     search_type = "Reddit"
-                extraction_type = search_type.capitalize()
-                max_length = self._get_max_content_length(search_type)
+
+                if max_length is None:
+                    max_length = self._get_max_content_length(search_type)
 
                 content = HTMLParser.extract_text(page_response.text, max_length, url=url)
 
@@ -327,6 +411,10 @@ class SearchService:
         """
         # Access model name directly from context - no parameter chaining needed!
         return Config.get_max_html_text_length(self.context.model_name)
+
+    def _get_scrape_count(self, search_type: str) -> int:
+        """Get number of pages to scrape based on search type and model size."""
+        return Config.get_scrape_count(self.context.model_name, search_type)
 
     def _format_web_results(self, results: List[dict], display_count: int = 5) -> List[str]:
         """

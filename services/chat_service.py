@@ -535,8 +535,7 @@ class ChatService:
             metadata["search_type"] = search_result.search_type
             metadata["search_query"] = search_result.search_query
 
-            source_domain = ChatService.extract_domain(search_result.source_url)
-            if source_domain:
-                metadata["source"] = source_domain
+            if search_result.source_url:
+                metadata["source"] = search_result.source_url
 
         return metadata
