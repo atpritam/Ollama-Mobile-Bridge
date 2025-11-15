@@ -222,6 +222,7 @@ class SearchService:
     async def _scrape_page(self, client: httpx.AsyncClient, url: str, title: str, search_type: str) -> Optional[str]:
         """
         Scrape content from a webpage with type-specific handling.
+        Falls back to Jina Reader for JavaScript-heavy sites.
 
         Args:
             client: HTTP client for making requests
@@ -251,12 +252,18 @@ class SearchService:
                 max_length = self._get_max_content_length(search_type)
 
                 content = HTMLParser.extract_text(page_response.text, max_length, url=url)
+
+                # javaScript-rendered page - try Jina Reader
+                if content and len(content) < 200:
+                    jina_content = await self._scrape_with_jina(client, url, max_length)
+                    if jina_content and len(jina_content) > len(content):
+                        content = jina_content
+
                 if content:
-                    app_logger.info(f"Successfully scraped {len(content)} chars from {extraction_type} page (search_type: {search_type})")
+                    app_logger.info(f"Successfully scraped {len(content)} chars (search_type: {search_type})")
 
                     result = f"=== Content from: {title} ===\n"
                     result += f"Source: {url}\n"
-                    result += f"Type: {extraction_type} Content\n\n"
                     result += content
 
                     return result
@@ -264,6 +271,49 @@ class SearchService:
             app_logger.warning(f"Scraping failed: {scrape_error}")
 
         return None
+
+    async def _scrape_with_jina(self, client: httpx.AsyncClient, url: str, max_length: int) -> Optional[str]:
+        """
+        Scrape content using Jina Reader API for JavaScript-rendered pages.
+
+        Args:
+            client: HTTP client for making requests
+            url: URL to scrape
+            max_length: Maximum content length
+
+        Returns:
+            Scraped content or None if scraping fails
+        """
+        try:
+            jina_url = f"https://r.jina.ai/{url}"
+
+            jina_response = await client.get(
+                jina_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Accept": "text/plain"
+                },
+                timeout=10.0
+            )
+
+            if jina_response.status_code == 200:
+                content = jina_response.text.strip()
+
+                # Limit to max_length
+                if len(content) > max_length:
+                    content = content[:max_length]
+                    last_period = content.rfind('.')
+                    if last_period > max_length * 0.7:
+                        content = content[:last_period + 1]
+
+                return content
+            else:
+                app_logger.warning(f"Jina Reader failed with status {jina_response.status_code}")
+                return None
+
+        except Exception as e:
+            app_logger.warning(f"Jina Reader error: {e}")
+            return None
 
     def _get_max_content_length(self, search_type: str) -> int:
         """

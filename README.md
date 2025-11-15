@@ -97,24 +97,33 @@ Returns all Ollama models available on your system with their details.
 
 ### Standard Chat
 ```http
-POST /chat
+POST http://127.0.0.1:8000/chat
 Content-Type: application/json
 
 {
   "model": "llama3.2:3b",
-  "message": "What's the weather like in Paris?",
-  "history": []
+  "prompt": "What's the weather like in its capital city?",
+  "history": [
+    {
+      "role": "user",
+      "content": "Tell me about France"
+    },
+    {
+      "role": "assistant",
+      "content": "France is a country in Western Europe. Its capital is Paris."
+    }
+  ]
 }
 ```
 
 ### Streaming Chat
 ```http
-POST /chat/stream
+POST http://127.0.0.1:8000/chat/stream
 Content-Type: application/json
 
 {
   "model": "gemma3:4b-it-qat",
-  "message": "Tell me about the latest AI developments",
+  "prompt": "Tell me about the latest AI developments",
   "history": []
 }
 ```

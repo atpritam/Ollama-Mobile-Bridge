@@ -277,8 +277,8 @@ class HTMLParser:
             # Normalize whitespace
             text = re.sub(r'\s+', ' ', text).strip()
 
-            # Split into sentences and filter out junk
-            text = HTMLParser._filter_sentences(text)
+            if len(text) > max_length * 2:
+                text = HTMLParser._filter_sentences(text)
 
             # Limit length at sentence boundaries
             if len(text) > max_length:
@@ -306,8 +306,8 @@ class HTMLParser:
 
         for sentence in sentences:
             sentence = sentence.strip()
-            if (len(sentence) > 30 and
-                sentence.count(' ') > 3 and
+            if (len(sentence) > 15 and
+                sentence.count(' ') > 1 and
                 not HTMLParser._spam_sentence_starts.match(sentence) and
                 not sentence.endswith(('...', '>>>', '<<<'))):
                 cleaned_sentences.append(sentence)

@@ -24,7 +24,10 @@ EXAMPLES (NO explanations. NO other text):
     REDDIT: RTX 5080 opinions
     GOOGLE: latest news on apple stock
 
-- Search query must not be your assumed answer to the user query"""
+Either respond with the search query or your known answer, not both.
+
+WRONG:
+    Models are now creating increasingly sophisticated video and audio content. I'm going to perform a Google search. GOOGLE: latest AI developments"""
 
 # Simplified system prompt for small models
 SIMPLE_SYSTEM_PROMPT = """You are a chat assistant with external web access. Today's date: {current_date}

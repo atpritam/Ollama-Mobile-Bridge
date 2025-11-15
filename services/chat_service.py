@@ -45,6 +45,10 @@ class ChatService:
         if re.search(r"wikipedia|wiki", query_lower):
             return True, SearchType.WIKIPEDIA, user_query
 
+        # Google search for recency
+        if re.search(r"recent|latest|2025|2026|this year", query_lower):
+            return True, SearchType.GOOGLE, user_query
+
         return False, "", ""
 
     @staticmethod
@@ -68,7 +72,7 @@ class ChatService:
         has_temporal = any(kw in query_lower for kw in temporal_keywords)
         has_realtime = any(kw in query_lower for kw in realtime_keywords)
 
-        if has_temporal and has_realtime:
+        if (has_temporal and has_realtime) or has_temporal:
             app_logger.info(f"Pre-flight: Recency pattern detected in query")
             return True
 
