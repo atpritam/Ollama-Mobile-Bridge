@@ -1,0 +1,118 @@
+# Test FastAPI endpoints
+
+GET http://127.0.0.1:8000/
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/list
+Accept: application/json
+
+###
+
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+
+{
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "What is 2+3?"
+}
+
+###
+
+# Test chat with conversation history
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+
+{
+  "model": "gemma3:4b-it-qat",
+  "prompt": "What did I just ask you?",
+  "history": [
+    {
+      "role": "user",
+      "content": "What is the capital of France?"
+    },
+    {
+      "role": "assistant",
+      "content": "The capital of France is Paris."
+    }
+  ]
+}
+
+###
+
+# Test chat with system prompt (detect knowledge cut-off) and conversation history
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+
+{
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "What about Paris?",
+  "system_prompt": "You are a chat assistant. Help answer User Query.",
+  "history": [
+    {
+      "role": "user",
+      "content": "What's the weather in London?"
+    },
+    {
+      "role": "assistant",
+      "content": "The Weather today in London is 14 degrees Celsius."
+    }
+  ]
+}
+
+###
+
+# Test Weather Search
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+
+{
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "Find the current weather in the capital of the country where the Eiffel Tower is located."
+}
+
+###
+
+# Test automatic search with Wikipedia
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+
+{
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "Who won the 2025 presidential election in poland?"
+}
+
+###
+
+# Test search with conversation history
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+
+{
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "What about the capital city's current temperature?",
+  "history": [
+    {
+      "role": "user",
+      "content": "Tell me about France"
+    },
+    {
+      "role": "assistant",
+      "content": "France is a country in Western Europe. Its capital is Paris."
+    }
+  ]
+}
+
+###
+
+# Test opinions search on reddit with stream response
+POST http://127.0.0.1:8000/chat/stream
+Content-Type: application/json
+
+{
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "what are people saying about OLED gaming monitors recently?"
+}
+
+###
