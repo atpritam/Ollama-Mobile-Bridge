@@ -386,7 +386,7 @@ class ChatService:
 
             # SMALL MODEL - Scenario B: Pre-flight passes, initial call with simple prompt
             call_num = context.next_call_number()
-            app_logger.info(f"LLM Call #{call_num}: Pre-flight passed, attempting with simple prompt")
+            app_logger.info(f"LLM Call #{call_num}: Pre-flight passed, Attempting First Call")
             response = await context.client.chat(
                 model=context.request.model,
                 messages=context.messages
@@ -422,7 +422,7 @@ class ChatService:
         else:
             # LARGE MODEL: Skip pre-flight, directly initial call with complex prompt
             call_num = context.next_call_number()
-            app_logger.info(f"LLM Call #{call_num}: Large model with complex prompt")
+            app_logger.info(f"LLM Call #{call_num}: Attempting First Call")
             response = await context.client.chat(
                 model=context.request.model,
                 messages=context.messages

@@ -4,8 +4,11 @@ Ollama Mobile Bridge - FastAPI application for chatting with local LLMs with web
 from fastapi import FastAPI
 from config import Config
 from routes import chat, models_route
+from auth import APIKeyMiddleware
 
 app = FastAPI(title=Config.APP_TITLE)
+
+app.add_middleware(APIKeyMiddleware)
 
 #root endpoint
 @app.get("/")
