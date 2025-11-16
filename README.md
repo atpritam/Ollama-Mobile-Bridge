@@ -8,7 +8,7 @@ A FastAPI-based intelligent bridge that enhances local Ollama LLM models with re
 - **Multi-Source Search**: Integrates Google search, Wikipedia, Reddit, and weather data
 - **Streaming Responses**: Server-Sent Events (SSE) for real-time token-by-token responses
 - **Context-Aware**: Maintains conversation history for coherent multi-turn dialogues
-- **Robust Content Extraction**: Site-specific parsers for Wikipedia and Reddit with fallback for generic sites
+- **User Memory**: Memory for personalized responses (preferences, location, etc.)
 - **Async Architecture**: Fully asynchronous for optimal performance
 
 ## Architecture
@@ -16,6 +16,7 @@ A FastAPI-based intelligent bridge that enhances local Ollama LLM models with re
 ```
 ChatLocalLLM/
 ├── main.py                      # Application entry point
+├── auth.py                      # Authentication middleware.
 ├── config.py                    # Configuration and environment variables
 ├── models/
 │   ├── api_models.py            # API request/response models
@@ -62,6 +63,7 @@ ChatLocalLLM/
    ```env
    BRAVE_SEARCH_API_KEY=your_brave_search_key
    OPENWEATHER_API_KEY=your_openweather_api_key
+   API_KEY=your_app_api_key
    ```
 
    - **Brave Search API**: Get free API key (2,000 queries/month) at [https://brave.com/search/api/](https://brave.com/search/api/)
@@ -99,6 +101,7 @@ Returns all Ollama models available on your system with their details.
 ```http
 POST http://127.0.0.1:8000/chat
 Content-Type: application/json
+X-API-Key: API_KEY
 
 {
   "model": "llama3.2:3b",
@@ -120,11 +123,12 @@ Content-Type: application/json
 ```http
 POST http://127.0.0.1:8000/chat/stream
 Content-Type: application/json
+X-API-Key: API_KEY
 
 {
-  "model": "gemma3:4b-it-qat",
-  "prompt": "Tell me about the latest AI developments",
-  "history": []
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "Recommend me a good restaurant for tonight",
+  "user_memory": "I live in Boston. I have a nut allergy. I don't like to go out on rain."
 }
 ```
 

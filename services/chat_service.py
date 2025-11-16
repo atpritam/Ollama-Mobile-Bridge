@@ -191,16 +191,20 @@ class ChatService:
     @staticmethod
     def get_system_prompt(request: ChatRequest) -> str:
         """Get system prompt from request or use default."""
+        user_context = request.user_memory.strip() if request.user_memory else None
+
         if request.system_prompt:
             return request.system_prompt
 
         if Config.is_small_model(request.model):
             return SIMPLE_SYSTEM_PROMPT.format(
-                current_date=datetime.now().strftime("%Y-%m-%d")
+                current_date=datetime.now().strftime("%Y-%m-%d"),
+                user_context=f"User Context: [{user_context}]" if user_context else ""
             )
 
         return DEFAULT_SYSTEM_PROMPT.format(
-            current_date=datetime.now().strftime("%Y-%m-%d")
+            current_date=datetime.now().strftime("%Y-%m-%d"),
+            user_context=f"User Context: [{user_context}]" if user_context else ""
         )
 
     @staticmethod
@@ -281,10 +285,13 @@ class ChatService:
     @staticmethod
     def _prepare_search_response_messages(context: ChatContext, search_results: str) -> list:
         """Prepare messages with search results injected into system prompt."""
+        user_context = context.request.user_memory.strip() if context.request.user_memory else "None"
+
         return ChatService.prepare_messages(
             context.request,
             SEARCH_RESULT_SYSTEM_PROMPT.format(
                 current_date=datetime.now().strftime("%Y-%m-%d"),
+                user_context=user_context,
                 search_results=search_results
             )
         )

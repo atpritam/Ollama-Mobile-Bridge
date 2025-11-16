@@ -17,3 +17,4 @@ class ChatRequest(BaseModel):
     prompt: str
     history: Optional[List[Message]] = Field(None, max_length=30)
     system_prompt: Optional[str] = None
+    user_memory: Optional[str] = Field(None, max_length=200, description="User preferences and context to remember")
