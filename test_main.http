@@ -1,4 +1,9 @@
 # Test FastAPI endpoints
+# Replace the API key below with your actual key from .env file
+
+@api_key = API_KEY
+
+###
 
 GET http://127.0.0.1:8000/
 Accept: application/json
@@ -7,11 +12,13 @@ Accept: application/json
 
 GET http://127.0.0.1:8000/list
 Accept: application/json
+X-API-Key: {{api_key}}
 
 ###
 
 POST http://127.0.0.1:8000/chat
 Content-Type: application/json
+X-API-Key: {{api_key}}
 
 {
   "model": "llama3.2:3b-instruct-q4_K_M",
@@ -23,6 +30,7 @@ Content-Type: application/json
 # Test chat with conversation history
 POST http://127.0.0.1:8000/chat
 Content-Type: application/json
+X-API-Key: {{api_key}}
 
 {
   "model": "gemma3:4b-it-qat",
@@ -44,6 +52,7 @@ Content-Type: application/json
 # Test chat with system prompt (detect knowledge cut-off) and conversation history
 POST http://127.0.0.1:8000/chat
 Content-Type: application/json
+X-API-Key: {{api_key}}
 
 {
   "model": "llama3.2:3b-instruct-q4_K_M",
@@ -66,6 +75,7 @@ Content-Type: application/json
 # Test Weather Search
 POST http://127.0.0.1:8000/chat
 Content-Type: application/json
+X-API-Key: {{api_key}}
 
 {
   "model": "llama3.2:3b-instruct-q4_K_M",
@@ -77,6 +87,7 @@ Content-Type: application/json
 # Test automatic search with Wikipedia
 POST http://127.0.0.1:8000/chat
 Content-Type: application/json
+X-API-Key: {{api_key}}
 
 {
   "model": "llama3.2:3b-instruct-q4_K_M",
@@ -88,6 +99,7 @@ Content-Type: application/json
 # Test search with conversation history
 POST http://127.0.0.1:8000/chat
 Content-Type: application/json
+X-API-Key: {{api_key}}
 
 {
   "model": "llama3.2:3b-instruct-q4_K_M",
@@ -109,10 +121,23 @@ Content-Type: application/json
 # Test opinions search on reddit with stream response
 POST http://127.0.0.1:8000/chat/stream
 Content-Type: application/json
+X-API-Key: {{api_key}}
 
 {
   "model": "llama3.2:3b-instruct-q4_K_M",
   "prompt": "what are people saying about OLED gaming monitors recently?"
+}
+
+###
+
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+X-API-Key: {{api_key}}
+
+{
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "What advancements have been made in quantum physics over the past 6 months?",
+  "history": []
 }
 
 ###
