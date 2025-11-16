@@ -279,50 +279,100 @@ class ChatService:
         return parsed.netloc
 
     @staticmethod
+    def _prepare_search_response_messages(context: ChatContext, search_results: str) -> list:
+        """Prepare messages with search results injected into system prompt."""
+        return ChatService.prepare_messages(
+            context.request,
+            SEARCH_RESULT_SYSTEM_PROMPT.format(
+                current_date=datetime.now().strftime("%Y-%m-%d"),
+                search_results=search_results
+            )
+        )
+
+    @staticmethod
+    async def _yield_search_and_response(search_result: SearchResult,context: ChatContext) -> AsyncIterator[FlowStep]:
+        """
+        Yield search action followed by stream response with search results.
+
+        Args:
+            search_result: SearchResult object with search data
+            context: ChatContext with request data
+
+        Yields:
+            FlowStep for search action and stream response
+        """
+        # Yield search action
+        yield FlowStep(
+            action=FlowAction.SEARCH,
+            search_type=search_result.search_type,
+            search_query=search_result.search_query
+        )
+
+        # Prepare final messages with search results
+        final_messages = ChatService._prepare_search_response_messages(
+            context,
+            search_result.search_results
+        )
+
+        # Yield stream response action
+        yield FlowStep(
+            action=FlowAction.STREAM_RESPONSE,
+            messages=final_messages,
+            search_result=search_result
+        )
+
+    @staticmethod
+    async def _handle_direct_search(context: ChatContext,search_type: str,search_query: str) -> AsyncIterator[FlowStep]:
+        """Handle direct search detection flow."""
+        app_logger.info(f"Direct search: {search_type} - '{search_query}'")
+
+        # Execute search
+        search_results, source_url = await ChatService.execute_search(
+            context, search_type, search_query
+        )
+
+        search_result = SearchResult(
+            performed=True,
+            search_type=search_type,
+            search_query=search_query,
+            search_results=search_results,
+            source_url=source_url
+        )
+
+        # Yield search and response
+        async for step in ChatService._yield_search_and_response(search_result, context):
+            yield step
+
+    @staticmethod
+    async def _handle_search_tag_detected(search_result: SearchResult,context: ChatContext) -> AsyncIterator[FlowStep]:
+        """Handle flow when SEARCH tag is detected in LLM response."""
+        app_logger.info("SEARCH tag detected")
+        async for step in ChatService._yield_search_and_response(search_result, context):
+            yield step
+
+    @staticmethod
+    async def _handle_knowledge_cutoff(context: ChatContext,assistant_response: str) -> AsyncIterator[FlowStep]:
+        """Handle flow when knowledge cutoff is detected in LLM response."""
+        app_logger.info("Cutoff detected, triggering search query extraction")
+
+        # Extract search query
+        search_result = await ChatService.extract_search_query(context, assistant_response)
+
+        # Yield search and response
+        async for step in ChatService._yield_search_and_response(search_result, context):
+            yield step
+
+    @staticmethod
     async def orchestrate_chat_flow(context: ChatContext) -> AsyncIterator[FlowStep]:
         """Core flow orchestrator that yields decision points."""
         is_small = Config.is_small_model(context.model_name)
 
         # DIRECT SEARCH DETECTION
-        # ============================================================
         has_direct_intent, search_type, search_query = ChatService.direct_search_detection(context.prompt)
 
         if has_direct_intent:
-            app_logger.info(f"Direct search: {search_type} - '{search_query}'")
-
-            # Yield search action
-            yield FlowStep(
-                action=FlowAction.SEARCH,
-                search_type=search_type,
-                search_query=search_query
-            )
-
-            # Execute search
-            search_results, source_url = await ChatService.execute_search(context, search_type, search_query)
-
-            search_result = SearchResult(
-                performed=True,
-                search_type=search_type,
-                search_query=search_query,
-                search_results=search_results,
-                source_url=source_url
-            )
-
-            # Prepare final messages with search results
-            final_messages = ChatService.prepare_messages(
-                context.request,
-                SEARCH_RESULT_SYSTEM_PROMPT.format(
-                    current_date=datetime.now().strftime("%Y-%m-%d"),
-                    search_results=search_results
-                )
-            )
-
-            # Yield stream response action
-            yield FlowStep(
-                action=FlowAction.STREAM_RESPONSE,
-                messages=final_messages,
-                search_result=search_result
-            )
+            async for step in ChatService._handle_direct_search(context, search_type, search_query):
+                yield step
             return
 
         if is_small:
@@ -330,29 +380,8 @@ class ChatService:
             if ChatService.preflight_search_check(context.prompt):
                 # Call #1: Generate proper search query using specialized prompt
                 search_result = await ChatService.extract_search_query(context, "")
-
-                # Yield search action
-                yield FlowStep(
-                    action=FlowAction.SEARCH,
-                    search_type=search_result.search_type,
-                    search_query=search_result.search_query
-                )
-
-                # Prepare final messages with search results
-                final_messages = ChatService.prepare_messages(
-                    context.request,
-                    SEARCH_RESULT_SYSTEM_PROMPT.format(
-                        current_date=datetime.now().strftime("%Y-%m-%d"),
-                        search_results=search_result.search_results
-                    )
-                )
-
-                # Yield stream response action
-                yield FlowStep(
-                    action=FlowAction.STREAM_RESPONSE,
-                    messages=final_messages,
-                    search_result=search_result
-                )
+                async for step in ChatService._yield_search_and_response(search_result, context):
+                    yield step
                 return
 
             # SMALL MODEL - Scenario B: Pre-flight passes, initial call with simple prompt
@@ -369,62 +398,14 @@ class ChatService:
             search_result = await ChatService.detect_and_perform_search(assistant_response, context)
 
             if search_result.performed:
-                # SEARCH tag detected, perform search and synthesize
-                app_logger.info("SEARCH tag detected in Call #1")
-
-                # Yield search action
-                yield FlowStep(
-                    action=FlowAction.SEARCH,
-                    search_type=search_result.search_type,
-                    search_query=search_result.search_query
-                )
-
-                # Prepare final messages with search results
-                final_messages = ChatService.prepare_messages(
-                    context.request,
-                    SEARCH_RESULT_SYSTEM_PROMPT.format(
-                        current_date=datetime.now().strftime("%Y-%m-%d"),
-                        search_results=search_result.search_results
-                    )
-                )
-
-                # Yield stream response action
-                yield FlowStep(
-                    action=FlowAction.STREAM_RESPONSE,
-                    messages=final_messages,
-                    search_result=search_result
-                )
+                async for step in ChatService._handle_search_tag_detected(search_result, context):
+                    yield step
                 return
 
             # Check for knowledge cutoff pattern
             if ChatService.detect_knowledge_cutoff(assistant_response):
-                app_logger.info("Cutoff detected, triggering Call #2 for query extraction")
-
-                # Call #2: Extract search query
-                search_result = await ChatService.extract_search_query(context, assistant_response)
-
-                # Yield search action
-                yield FlowStep(
-                    action=FlowAction.SEARCH,
-                    search_type=search_result.search_type,
-                    search_query=search_result.search_query
-                )
-
-                # Prepare final messages with search results
-                final_messages = ChatService.prepare_messages(
-                    context.request,
-                    SEARCH_RESULT_SYSTEM_PROMPT.format(
-                        current_date=datetime.now().strftime("%Y-%m-%d"),
-                        search_results=search_result.search_results
-                    )
-                )
-
-                # Yield stream response action
-                yield FlowStep(
-                    action=FlowAction.STREAM_RESPONSE,
-                    messages=final_messages,
-                    search_result=search_result
-                )
+                async for step in ChatService._handle_knowledge_cutoff(context, assistant_response):
+                    yield step
                 return
 
             # No search needed, return Call #1 response
@@ -432,7 +413,7 @@ class ChatService:
             yield FlowStep(
                 action=FlowAction.RETURN_RESPONSE,
                 response=clean_response,
-                messages=context.messages,  # Pass messages for streaming
+                messages=context.messages,
                 search_result=SearchResult(performed=False),
                 call_number=call_num
             )
@@ -453,62 +434,14 @@ class ChatService:
             search_result = await ChatService.detect_and_perform_search(assistant_response, context)
 
             if search_result.performed:
-                # SEARCH tag detected, perform search and synthesize
-                app_logger.info("SEARCH tag detected in Call #1")
-
-                # Yield search action
-                yield FlowStep(
-                    action=FlowAction.SEARCH,
-                    search_type=search_result.search_type,
-                    search_query=search_result.search_query
-                )
-
-                # Prepare final messages with search results
-                final_messages = ChatService.prepare_messages(
-                    context.request,
-                    SEARCH_RESULT_SYSTEM_PROMPT.format(
-                        current_date=datetime.now().strftime("%Y-%m-%d"),
-                        search_results=search_result.search_results
-                    )
-                )
-
-                # Yield stream response action
-                yield FlowStep(
-                    action=FlowAction.STREAM_RESPONSE,
-                    messages=final_messages,
-                    search_result=search_result
-                )
+                async for step in ChatService._handle_search_tag_detected(search_result, context):
+                    yield step
                 return
 
             # Check for knowledge cutoff pattern
             if ChatService.detect_knowledge_cutoff(assistant_response):
-                app_logger.info("Cutoff detected, triggering Call #2 for query extraction")
-
-                # Call #2: Extract search query
-                search_result = await ChatService.extract_search_query(context, assistant_response)
-
-                # Yield search action
-                yield FlowStep(
-                    action=FlowAction.SEARCH,
-                    search_type=search_result.search_type,
-                    search_query=search_result.search_query
-                )
-
-                # Prepare final messages with search results
-                final_messages = ChatService.prepare_messages(
-                    context.request,
-                    SEARCH_RESULT_SYSTEM_PROMPT.format(
-                        current_date=datetime.now().strftime("%Y-%m-%d"),
-                        search_results=search_result.search_results
-                    )
-                )
-
-                # Yield stream response action
-                yield FlowStep(
-                    action=FlowAction.STREAM_RESPONSE,
-                    messages=final_messages,
-                    search_result=search_result
-                )
+                async for step in ChatService._handle_knowledge_cutoff(context, assistant_response):
+                    yield step
                 return
 
             # No search needed, return Call #1 response
