@@ -21,6 +21,7 @@ from config import Config
 from services.weather import WeatherService
 from services.search import SearchService
 from utils.logger import app_logger
+from utils.token_manager import TokenManager
 
 
 class ChatService:
@@ -158,24 +159,13 @@ class ChatService:
         extraction_response = response['message']['content'].strip()
         app_logger.info(f"LLM Call #{call_num} response: {extraction_response}")
 
-        search_match = re.search(Patterns.SEARCH_WITH_TYPE, extraction_response, re.IGNORECASE)
+        search_type, search_query = ChatService._parse_search_command(extraction_response)
 
-        if not search_match:
-            fallback_match = re.search(Patterns.SEARCH_FALLBACK, extraction_response, re.IGNORECASE)
-            if fallback_match:
-                search_type = SearchType.GOOGLE
-                search_query = fallback_match.group(1).strip()
-                app_logger.info(f"Extraction fallback: google - '{search_query}'")
-            else:
-                app_logger.warning(f"Extraction failed, using original query")
-                search_type = SearchType.GOOGLE
-                search_query = context.prompt
+        if not search_type:
+            app_logger.warning(f"Extraction failed, using original query")
+            search_type = SearchType.GOOGLE
+            search_query = context.prompt
         else:
-            search_type_raw = search_match.group(1).upper()
-            search_query = search_match.group(2).strip()
-            search_query = search_query.strip('"').strip("'")
-
-            search_type = ChatService.parse_search_type(search_type_raw)
             app_logger.info(f"Extraction successful: {search_type} - '{search_query}'")
 
         search_results, source_url = await ChatService.execute_search(context, search_type, search_query)
@@ -191,46 +181,55 @@ class ChatService:
     @staticmethod
     def get_system_prompt(request: ChatRequest) -> str:
         """Get system prompt from request or use default."""
-        user_context = request.user_memory.strip() if request.user_memory else None
-
         if request.system_prompt:
             return request.system_prompt
+
+        user_context = ChatService._format_user_context(request.user_memory)
 
         if Config.is_small_model(request.model):
             return SIMPLE_SYSTEM_PROMPT.format(
                 current_date=datetime.now().strftime("%Y-%m-%d"),
-                user_context=f"User Context: [{user_context}]" if user_context else ""
+                user_context=user_context
             )
 
         return DEFAULT_SYSTEM_PROMPT.format(
             current_date=datetime.now().strftime("%Y-%m-%d"),
-            user_context=f"User Context: [{user_context}]" if user_context else ""
+            user_context=user_context
         )
 
     @staticmethod
     def prepare_messages(request: ChatRequest, system_prompt: str) -> list:
         """
         Prepare a messages list for LLM with system prompt and history.
-
-        Args:
-            request: Chat request containing prompt and history
-            system_prompt: System prompt to use
-
-        Returns:
-            List of messages for LLM
+        Uses intelligent token-based truncation to fit within the model's context window.
         """
         messages = []
 
-        # System prompt
         messages.append({"role": "system", "content": system_prompt})
 
-        # History (last N messages)
+        # Truncate history to fit within token budget
         if request.history:
-            limited_history = request.history[-Config.MAX_HISTORY_MESSAGES:]
-            messages.extend([{"role": msg.role, "content": msg.content} for msg in limited_history])
+            truncated_history, messages_included = TokenManager.truncate_history_to_fit(
+                system_prompt=system_prompt,
+                user_memory=request.user_memory or "",
+                current_prompt=request.prompt,
+                history=[{"role": msg.role, "content": msg.content} for msg in request.history],
+                model_name=request.model
+            )
+            messages.extend(truncated_history)
 
-        # Current user prompt
         messages.append({"role": "user", "content": request.prompt})
+
+        # validation
+        within_limit, tokens_used, safe_limit, model_max = TokenManager.check_context_limit(
+            messages, request.model
+        )
+
+        if not within_limit:
+            raise ValueError(
+                f"Context limit exceeded. "
+                f"Tokens: {tokens_used}/{safe_limit} (model max: {model_max}). "
+            )
 
         return messages
 
@@ -245,23 +244,12 @@ class ChatService:
         Returns:
             SearchResult object containing search information
         """
-        search_match = re.search(Patterns.SEARCH_WITH_TYPE, assistant_response, re.IGNORECASE)
+        search_type, search_query = ChatService._parse_search_command(assistant_response)
 
-        if not search_match:
-            fallback_match = re.search(Patterns.SEARCH_FALLBACK, assistant_response, re.IGNORECASE)
-            if fallback_match:
-                search_type = SearchType.GOOGLE
-                search_query = fallback_match.group(1).strip()
-                app_logger.info(f"Search triggered (default to google): '{search_query}'")
-            else:
-                return SearchResult(performed=False)
-        else:
-            search_type_raw = search_match.group(1).upper()
-            search_query = search_match.group(2).strip()
-            search_query = search_query.strip('"').strip("'")
+        if not search_type:
+            return SearchResult(performed=False)
 
-            search_type = ChatService.parse_search_type(search_type_raw)
-            app_logger.info(f"Search triggered: {search_type} - '{search_query}'")
+        app_logger.info(f"Search triggered: {search_type} - '{search_query}'")
 
         search_results, source_url = await ChatService.execute_search(context, search_type, search_query)
         app_logger.debug(f"Search results: {search_results[:200]}")
@@ -283,17 +271,99 @@ class ChatService:
         return parsed.netloc
 
     @staticmethod
+    def _format_user_context(user_memory: str | None) -> str:
+        """Format user memory into context string."""
+        if not user_memory:
+            return ""
+        user_context = user_memory.strip()
+        return f"User Context: [{user_context}]" if user_context else ""
+
+    @staticmethod
+    def _parse_search_command(text: str) -> tuple[str | None, str | None]:
+        """Parse search command from text and extract type and query.
+
+        Returns:
+            Tuple of (search_type, search_query) or (None, None) if no match
+        """
+        search_match = re.search(Patterns.SEARCH_WITH_TYPE, text, re.IGNORECASE)
+
+        if search_match:
+            search_type_raw = search_match.group(1).upper()
+            search_query = search_match.group(2).strip()
+            search_query = search_query.strip('"').strip("'")
+            search_type = ChatService.parse_search_type(search_type_raw)
+            return search_type, search_query
+
+        # Try fallback pattern
+        fallback_match = re.search(Patterns.SEARCH_FALLBACK, text, re.IGNORECASE)
+        if fallback_match:
+            search_query = fallback_match.group(1).strip()
+            return SearchType.GOOGLE, search_query
+
+        return None, None
+
+    @staticmethod
+    def _build_messages(request: ChatRequest,system_prompt: str, additional_reserve: int = 0, validate: bool = True) -> list:
+        """Build messages list with system prompt, history, and user prompt.
+
+        Args:
+            request: Chat request containing prompt and history
+            system_prompt: System prompt to use
+            additional_reserve: Additional tokens to reserve for search results
+            validate: Whether to validate context limits and raise on overflow
+
+        Returns:
+            List of messages ready for LLM
+        """
+        messages = []
+        messages.append({"role": "system", "content": system_prompt})
+
+        # Truncate history to fit within token budget
+        if request.history:
+            truncated_history, messages_included = TokenManager.truncate_history_to_fit(
+                system_prompt=system_prompt,
+                user_memory=request.user_memory or "",
+                current_prompt=request.prompt,
+                history=[{"role": msg.role, "content": msg.content} for msg in request.history],
+                model_name=request.model,
+                additional_reserve=additional_reserve
+            )
+            messages.extend(truncated_history)
+
+        messages.append({"role": "user", "content": request.prompt})
+
+        # Validation
+        if validate:
+            within_limit, tokens_used, safe_limit, model_max = TokenManager.check_context_limit(
+                messages, request.model
+            )
+
+            if not within_limit:
+                raise ValueError(
+                    f"Context limit exceeded. "
+                    f"Tokens: {tokens_used}/{safe_limit} (model max: {model_max}). "
+                )
+
+        return messages
+
+    @staticmethod
     def _prepare_search_response_messages(context: ChatContext, search_results: str) -> list:
         """Prepare messages with search results injected into system prompt."""
-        user_context = context.request.user_memory.strip() if context.request.user_memory else "None"
+        search_system_prompt = SEARCH_RESULT_SYSTEM_PROMPT.format(
+            current_date=datetime.now().strftime("%Y-%m-%d"),
+            user_context=ChatService._format_user_context(context.request.user_memory),
+            search_results=search_results
+        )
 
-        return ChatService.prepare_messages(
-            context.request,
-            SEARCH_RESULT_SYSTEM_PROMPT.format(
-                current_date=datetime.now().strftime("%Y-%m-%d"),
-                user_context=user_context,
-                search_results=search_results
-            )
+        # Calculate search result token cost
+        search_result_tokens = TokenManager.estimate_tokens(search_results)
+        app_logger.info(f"Search results size: {search_result_tokens} tokens")
+
+        return ChatService._build_messages(
+            request=context.request,
+            system_prompt=search_system_prompt,
+            additional_reserve=search_result_tokens,
+            validate=False  # Just warn, don't throw
         )
 
     @staticmethod
@@ -370,6 +440,48 @@ class ChatService:
             yield step
 
     @staticmethod
+    async def _process_llm_response(context: ChatContext, call_num: int) -> AsyncIterator[FlowStep]:
+        """Process LLM response and handle search/cutoff detection.
+
+        Args:
+            context: ChatContext with request data
+            call_num: LLM call number for logging
+
+        Yields:
+            FlowStep for various actions (search, response, etc.)
+        """
+        response = await context.client.chat(
+            model=context.request.model,
+            messages=context.messages
+        )
+        assistant_response = response['message']['content']
+        app_logger.debug(f"LLM Call #{call_num} response preview: {assistant_response[:100]}...")
+
+        # Check for SEARCH tag in response
+        search_result = await ChatService.detect_and_perform_search(assistant_response, context)
+
+        if search_result.performed:
+            async for step in ChatService._handle_search_tag_detected(search_result, context):
+                yield step
+            return
+
+        # Check for knowledge cutoff pattern
+        if ChatService.detect_knowledge_cutoff(assistant_response):
+            async for step in ChatService._handle_knowledge_cutoff(context, assistant_response):
+                yield step
+            return
+
+        # No search needed, return Call #1 response
+        clean_response = ChatService.clean_response(assistant_response)
+        yield FlowStep(
+            action=FlowAction.RETURN_RESPONSE,
+            response=clean_response,
+            messages=context.messages,
+            search_result=SearchResult(performed=False),
+            call_number=call_num
+        )
+
+    @staticmethod
     async def orchestrate_chat_flow(context: ChatContext) -> AsyncIterator[FlowStep]:
         """Core flow orchestrator that yields decision points."""
         is_small = Config.is_small_model(context.model_name)
@@ -391,84 +503,33 @@ class ChatService:
                     yield step
                 return
 
-            # SMALL MODEL - Scenario B: Pre-flight passes, initial call with simple prompt
-            call_num = context.next_call_number()
-            app_logger.info(f"LLM Call #{call_num}: Pre-flight passed, Attempting First Call")
-            response = await context.client.chat(
-                model=context.request.model,
-                messages=context.messages
-            )
-            assistant_response = response['message']['content']
-            app_logger.debug(f"LLM Call #{call_num} response preview: {assistant_response[:100]}...")
+        # SMALL MODEL - Scenario B OR LARGE MODEL: Initial call with prompt
+        call_num = context.next_call_number()
+        log_prefix = "Pre-flight passed, Attempting" if is_small else "Attempting"
+        app_logger.info(f"LLM Call #{call_num}: {log_prefix} First Call")
 
-            # Check for SEARCH tag in response
-            search_result = await ChatService.detect_and_perform_search(assistant_response, context)
-
-            if search_result.performed:
-                async for step in ChatService._handle_search_tag_detected(search_result, context):
-                    yield step
-                return
-
-            # Check for knowledge cutoff pattern
-            if ChatService.detect_knowledge_cutoff(assistant_response):
-                async for step in ChatService._handle_knowledge_cutoff(context, assistant_response):
-                    yield step
-                return
-
-            # No search needed, return Call #1 response
-            clean_response = ChatService.clean_response(assistant_response)
-            yield FlowStep(
-                action=FlowAction.RETURN_RESPONSE,
-                response=clean_response,
-                messages=context.messages,
-                search_result=SearchResult(performed=False),
-                call_number=call_num
-            )
-            return
-
-        else:
-            # LARGE MODEL: Skip pre-flight, directly initial call with complex prompt
-            call_num = context.next_call_number()
-            app_logger.info(f"LLM Call #{call_num}: Attempting First Call")
-            response = await context.client.chat(
-                model=context.request.model,
-                messages=context.messages
-            )
-            assistant_response = response['message']['content']
-            app_logger.debug(f"LLM Call #{call_num} response preview: {assistant_response[:100]}...")
-
-            # Check for SEARCH tag
-            search_result = await ChatService.detect_and_perform_search(assistant_response, context)
-
-            if search_result.performed:
-                async for step in ChatService._handle_search_tag_detected(search_result, context):
-                    yield step
-                return
-
-            # Check for knowledge cutoff pattern
-            if ChatService.detect_knowledge_cutoff(assistant_response):
-                async for step in ChatService._handle_knowledge_cutoff(context, assistant_response):
-                    yield step
-                return
-
-            # No search needed, return Call #1 response
-            clean_response = ChatService.clean_response(assistant_response)
-            yield FlowStep(
-                action=FlowAction.RETURN_RESPONSE,
-                response=clean_response,
-                messages=context.messages,
-                search_result=SearchResult(performed=False),
-                call_number=call_num
-            )
-            return
+        # Process response and handle search/cutoff detection
+        async for step in ChatService._process_llm_response(context, call_num):
+            yield step
 
     @staticmethod
     def build_response_metadata(request: ChatRequest,messages: list,search_result: SearchResult) -> dict:
         """Build response metadata dictionary."""
+        # Calculate token usage
+        _, tokens_used, safe_limit, model_max = TokenManager.check_context_limit(
+            messages, request.model
+        )
+
         metadata = {
             "model": request.model,
             "context_messages_count": len(messages) - 1,
-            "search_performed": search_result.performed
+            "search_performed": search_result.performed,
+            "tokens": {
+                "used": tokens_used,
+                "limit": safe_limit,
+                "model_max": model_max,
+                "usage_percent": round((tokens_used / safe_limit) * 100, 1)
+            }
         }
 
         if search_result.performed:

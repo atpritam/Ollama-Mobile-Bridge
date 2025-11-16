@@ -44,6 +44,10 @@ class Config:
     # Small model detection in b parameters (default)
     SMALL_MODEL_THRESHOLD: float = 4.0
 
+    # Safety buffer: 75% model context usage
+    # Better response quality
+    SAFETY_BUFFER = 0.75
+
     # Content web Limits per scape (default)
     MAX_HTML_TEXT_LENGTH: int = 4000
 

@@ -5,10 +5,10 @@ A FastAPI-based intelligent bridge that enhances local Ollama LLM models with re
 ## Features
 
 - **Intelligent Search Detection**: Automatically identifies queries requiring up-to-date information
-- **Multi-Source Search**: Integrates Google search, Wikipedia, Reddit, and weather data
 - **Streaming Responses**: Server-Sent Events (SSE) for real-time token-by-token responses
 - **Context-Aware**: Maintains conversation history for coherent multi-turn dialogues
 - **User Memory**: Memory for personalized responses (preferences, location, etc.)
+- **Token Management**: Automatically truncates history to fit context limits, with dynamic re-adjustment for search results
 - **Async Architecture**: Fully asynchronous for optimal performance
 
 ## Architecture
@@ -31,7 +31,8 @@ ChatLocalLLM/
 └── utils/
     ├── constants.py             # System prompts and constants
     ├── html_parser.py           # HTML text extraction utilities
-    └── logger.py                # Logging configuration
+    ├── logger.py                # Logging configuration
+    └── token_manager.py         # Context window and token management
 ```
 
 ## Prerequisites
@@ -105,15 +106,15 @@ X-API-Key: API_KEY
 
 {
   "model": "llama3.2:3b",
-  "prompt": "What's the weather like in its capital city?",
+  "prompt": "What about Paris?",
   "history": [
     {
       "role": "user",
-      "content": "Tell me about France"
+      "content": "What's the weather in London?"
     },
     {
       "role": "assistant",
-      "content": "France is a country in Western Europe. Its capital is Paris."
+      "content": "The Weather today in London is 14 degrees Celsius."
     }
   ]
 }
@@ -133,8 +134,7 @@ X-API-Key: API_KEY
 ```
 
 Returns Server-Sent Events with real-time updates:
-- `status`: Current processing stage (initializing, thinking, searching, generating)
-- `search`: Search results and metadata
+- `status`: Current processing stage (initializing, thinking, searching, reading, generating)
 - `token`: Individual response tokens
 - `done`: Final response and metadata
 
@@ -144,10 +144,16 @@ Returns Server-Sent Events with real-time updates:
   "model": "llama3.2:3b",
   "context_messages_count": 3,
   "search_performed": true,
+  "tokens": {
+    "used": 137,
+    "limit": 98304,
+    "model_max": 131072,
+    "usage_percent": 0.1
+  },
   "search_type": "weather",
   "search_query": "Paris",
   "source": "https://openweathermap.org",
-  "response": "llm response"
+  "response": "llm model response"
 }
 ```
 

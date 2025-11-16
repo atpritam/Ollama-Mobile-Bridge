@@ -16,7 +16,19 @@ router = APIRouter()
 
 def send_sse_event(event_type: str, data: dict) -> str:
     """Format data as Server-Sent Events (SSE) format."""
-    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+    return f"event: {event_type}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+def send_context_limit_error(e) -> dict:
+    """Send token usage context limit error."""
+    return {
+        "error": "context_limit_exceeded",
+        "message": str(e),
+        "suggestions": [
+            "Start a new chat",
+            "Try a model with a larger context window",
+            "Shorten your current prompt or user memory"
+        ]
+    }
 
 
 @router.post("/chat")
@@ -67,6 +79,12 @@ async def chat(request: ChatRequest):
 
         return response_data
 
+    except ValueError as e:
+        app_logger.error(f"Context limit error: {str(e)}")
+        return send_context_limit_error(e)
+    except ollama.ResponseError as e:
+        app_logger.error(f"Ollama error: {e.error}")
+        return {"error": "ollama_error", "message": e.error}
     except Exception as e:
         app_logger.error(f"Chat error: {str(e)}")
         return {"error": str(e)}
@@ -166,6 +184,12 @@ async def chat_stream(request: ChatRequest):
                     yield send_sse_event("done", metadata)
                     return
 
+        except ValueError as e:
+            app_logger.error(f"Context limit error: {str(e)}")
+            yield send_sse_event("error", send_context_limit_error(e))
+        except ollama.ResponseError as e:
+            app_logger.error(f"Ollama error: {e.error}")
+            yield send_sse_event("error", {"type": "ollama_error", "message": e.error})
         except Exception as e:
             app_logger.error(f"Streaming chat error: {str(e)}")
             yield send_sse_event("error", {"message": str(e)})
