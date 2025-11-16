@@ -4,6 +4,7 @@ Handles environment variables and application settings.
 """
 import os
 import re
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,6 +30,16 @@ class Config:
     SEARCH_TIMEOUT: float = 15.0
     WEATHER_TIMEOUT: float = 10.0
     WEB_SCRAPING_TIMEOUT: float = 10.0
+
+    # Security Settings
+    MAX_RESPONSE_SIZE: int = 10 * 1024 * 1024
+    MAX_CONCURRENT_SCRAPES: int = 10
+    MAX_REDIRECTS: int = 3
+    ALLOWED_URL_SCHEMES: set = {'https'}
+    ALLOWED_CONTENT_TYPES: set = {
+        'text/html', 'text/plain', 'text/xml', 'text/markdown',
+        'application/json', 'application/xml', 'application/xhtml+xml'
+    }
 
     # Small model detection in b parameters (default)
     SMALL_MODEL_THRESHOLD: float = 4.0
@@ -108,6 +119,19 @@ class Config:
                 return row[idx]
 
         return 1
+
+    @classmethod
+    def validate_url(cls, url: str) -> None:
+        """
+        Validate URL for security.
+        Raises ValueError if URL scheme is not allowed.
+        """
+        parsed = urlparse(url)
+        if parsed.scheme not in cls.ALLOWED_URL_SCHEMES:
+            raise ValueError(
+                f"Invalid URL scheme '{parsed.scheme}'. "
+                f"Only {', '.join(cls.ALLOWED_URL_SCHEMES)} are allowed."
+            )
 
     @classmethod
     def validate(cls) -> None:

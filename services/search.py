@@ -84,7 +84,14 @@ class SearchService:
             return f"Search query: '{query}'\nSearch API key not configured. Cannot perform search.", None
 
         try:
-            async with httpx.AsyncClient(timeout=Config.SEARCH_TIMEOUT, follow_redirects=True) as client:
+            # Client configured with security limits
+            limits = httpx.Limits(max_connections=Config.MAX_CONCURRENT_SCRAPES)
+            async with httpx.AsyncClient(
+                timeout=Config.SEARCH_TIMEOUT,
+                follow_redirects=True,
+                max_redirects=Config.MAX_REDIRECTS,
+                limits=limits
+            ) as client:
                 # type-specific search parameters
                 params = self._get_search_params(search_type, query)
 
@@ -109,9 +116,15 @@ class SearchService:
                 else:
                     return f"Search query: '{query}'\nSearch API error (status {response.status_code}).", None
 
+        except httpx.TimeoutException as e:
+            app_logger.error(f"Search timed out: {str(e)}")
+            return f"Search query: '{query}'\nSearch timed out. Please try again.", None
+        except httpx.RequestError as e:
+            app_logger.error(f"Search request failed: {str(e)}")
+            return f"Search query: '{query}'\nSearch request failed: {str(e)}", None
         except Exception as e:
-            app_logger.error(f"Search failed: {str(e)}")
-            return f"Search query: '{query}'\nSearch failed: {str(e)}", None
+            app_logger.error(f"Unexpected search error: {str(e)}")
+            return f"Search query: '{query}'\nUnexpected error during search.", None
 
     async def _process_search_results(self, data: dict, client: httpx.AsyncClient, search_type: str) -> Tuple[str, Optional[str]]:
         """
@@ -317,16 +330,42 @@ class SearchService:
             Scraped content or None if scraping fails
         """
         try:
+            # URL Security Validation
+            Config.validate_url(url)
+
             app_logger.info(f"Scraping content from: {url} (type: {search_type})")
-            page_response = await client.get(
-                url,
+
+            async with client.stream(
+                'GET', url,
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                 },
-                timeout=Config.WEB_SCRAPING_TIMEOUT
-            )
+                timeout=Config.WEB_SCRAPING_TIMEOUT,
+                follow_redirects=True
+            ) as page_response:
 
-            if page_response.status_code == 200:
+                if page_response.status_code != 200:
+                    app_logger.warning(f"Failed to fetch {url}: status {page_response.status_code}")
+                    return None
+
+                # Validate content-type before downloading
+                content_type = page_response.headers.get('content-type', '').lower().split(';')[0].strip()
+                if content_type and not any(allowed in content_type for allowed in Config.ALLOWED_CONTENT_TYPES):
+                    app_logger.warning(f"Skipping {url}: unsupported content-type '{content_type}'")
+                    return None
+
+                size = 0
+                chunks = []
+                async for chunk in page_response.aiter_bytes():
+                    size += len(chunk)
+                    if size > Config.MAX_RESPONSE_SIZE:
+                        app_logger.warning(f"Response from {url} exceeds size limit ({size} bytes)")
+                        return None
+                    chunks.append(chunk)
+
+                html_content = b''.join(chunks).decode('utf-8', errors='ignore')
+
+            if html_content:
                 if "wikipedia.org" in url:
                     search_type = "Wikipedia"
                 elif "reddit.com" in url:
@@ -335,7 +374,7 @@ class SearchService:
                 if max_length is None:
                     max_length = self._get_max_content_length(search_type)
 
-                content = HTMLParser.extract_text(page_response.text, max_length, url=url)
+                content = HTMLParser.extract_text(html_content, max_length, url=url)
 
                 # javaScript-rendered page - try Jina Reader
                 if content and len(content) < 200:
@@ -351,8 +390,16 @@ class SearchService:
                     result += content
 
                     return result
-        except Exception as scrape_error:
-            app_logger.warning(f"Scraping failed: {scrape_error}")
+        except ValueError as e:
+            app_logger.warning(f"Scraping validation failed for {url}: {e}")
+        except httpx.TimeoutException:
+            app_logger.warning(f"Scraping timed out for {url}")
+        except httpx.RequestError as e:
+            app_logger.warning(f"Scraping request failed for {url}: {e}")
+        except UnicodeDecodeError as e:
+            app_logger.warning(f"Failed to decode content from {url}: {e}")
+        except Exception as e:
+            app_logger.warning(f"Unexpected scraping error for {url}: {e}")
 
         return None
 

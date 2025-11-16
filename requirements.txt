@@ -5,4 +5,4 @@ pydantic==2.12.4
 beautifulsoup4==4.14.2
 lxml==6.0.2
 uvicorn==0.38.0
-python-dotenv
+python-dotenv==1.2.1

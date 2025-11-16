@@ -2,7 +2,7 @@
 Pydantic data models for API requests and responses.
 """
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Message(BaseModel):
@@ -15,5 +15,5 @@ class ChatRequest(BaseModel):
     """Chat request model with conversation history."""
     model: str
     prompt: str
-    history: Optional[List[Message]] = None
+    history: Optional[List[Message]] = Field(None, max_length=30)
     system_prompt: Optional[str] = None

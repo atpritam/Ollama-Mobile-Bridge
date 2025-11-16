@@ -134,6 +134,19 @@ Returns Server-Sent Events with real-time updates:
 - `token`: Individual response tokens
 - `done`: Final response and metadata
 
+### API Response
+```json
+{
+  "model": "llama3.2:3b",
+  "context_messages_count": 3,
+  "search_performed": true,
+  "search_type": "weather",
+  "search_query": "Paris",
+  "source": "https://openweathermap.org",
+  "response": "llm response"
+}
+```
+
 ## Development
 
 ### Project Structure
