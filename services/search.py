@@ -158,8 +158,11 @@ class SearchService:
             max_length_per_page = max_total_length // scrape_count_target if scrape_count_target > 0 else max_total_length
 
             if search_type == SearchType.REDDIT:
-                # Reddit:
                 reddit_results = [r for r in web_results[:8] if "reddit.com" in r.get("url", "")][:scrape_count_target]
+
+                # Fallback: if no Reddit URLs found, use top general results
+                if not reddit_results:
+                    reddit_results = web_results[:scrape_count_target]
 
                 scrape_tasks = []
                 task_urls = []  # Track URLs for each task
@@ -181,17 +184,21 @@ class SearchService:
 
                 scraped_count = 0
                 for idx, content in enumerate(scraped_contents):
-                    if content and not isinstance(content, Exception):
+                    if isinstance(content, Exception):
+                        app_logger.warning(f"Reddit scraping failed for {task_urls[idx]}: {content}")
+                    elif content:
                         results.append(content)
                         source_urls.append(task_urls[idx])
                         scraped_count += 1
+                    else:
+                        app_logger.warning(f"Reddit scraping returned empty for {task_urls[idx]}")
 
                 app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Reddit threads in parallel")
 
             elif search_type == SearchType.WIKIPEDIA:
-                # Wikipedia:
                 wiki_results = [r for r in web_results[:5] if "wikipedia.org" in r.get("url", "")][:scrape_count_target]
 
+                # Fallback: if no Wikipedia URLs found, use top general results
                 if not wiki_results:
                     wiki_results = web_results[:scrape_count_target]
 
@@ -314,6 +321,81 @@ class SearchService:
 
         return results[0]
 
+    async def _scrape_wikipedia_api(self, client: httpx.AsyncClient, url: str, title: str, max_length: int) -> Optional[str]:
+        """
+        Fetch Wikipedia content using Wikipedia API.
+
+        Args:
+            client: HTTP client for making requests
+            url: Wikipedia URL
+            title: Article title
+            max_length: Maximum content length
+
+        Returns:
+            Wikipedia content or None if fetch fails
+        """
+        try:
+            import re
+            from urllib.parse import unquote
+
+            match = re.search(r'wikipedia\.org/wiki/(.+)$', url)
+            if not match:
+                return None
+
+            article_title = unquote(match.group(1))
+            app_logger.info(f"Fetching Wikipedia article: {url}")
+
+            api_url = "https://en.wikipedia.org/w/api.php"
+            params = {
+                "action": "query",
+                "format": "json",
+                "titles": article_title,
+                "prop": "extracts",
+                "explaintext": True,
+                "exsectionformat": "plain"
+            }
+
+            response = await client.get(
+                api_url,
+                params=params,
+                headers={
+                    "User-Agent": "OllamaMobileBridge/1.0 (https://github.com/atpritam/Ollama-Mobile-Bridge; pritam@gmail.com) httpx/0.27.0"
+                },
+                timeout=10.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                pages = data.get("query", {}).get("pages", {})
+
+                for page_id, page_data in pages.items():
+                    if page_id == "-1":
+                        app_logger.warning(f"Wikipedia article not found: {article_title}")
+                        return None
+
+                    extract = page_data.get("extract", "")
+                    if extract:
+                        if len(extract) > max_length:
+                            extract = extract[:max_length]
+                            last_period = extract.rfind('.')
+                            if last_period > max_length * 0.7:
+                                extract = extract[:last_period + 1]
+
+                        app_logger.info(f"Successfully fetched {len(extract)} chars from Wikipedia")
+
+                        result = f"=== Content from: {title} ===\n"
+                        result += f"Source: {url}\n"
+                        result += extract
+
+                        return result
+            else:
+                app_logger.warning(f"Wikipedia API returned status {response.status_code}")
+                return None
+
+        except Exception as e:
+            app_logger.warning(f"Wikipedia API error for {url}: {e}")
+            return None
+
     async def _scrape_page(self, client: httpx.AsyncClient, url: str, title: str, search_type: str, max_length: Optional[int] = None) -> Optional[str]:
         """
         Scrape content from a webpage with type-specific handling.
@@ -332,6 +414,25 @@ class SearchService:
         try:
             # URL Security Validation
             Config.validate_url(url)
+
+            # Wikipedia API
+            if "wikipedia.org" in url:
+                if max_length is None:
+                    max_length = self._get_max_content_length(SearchType.WIKIPEDIA)
+
+                wiki_content = await self._scrape_wikipedia_api(client, url, title, max_length)
+                if wiki_content:
+                    return wiki_content
+
+                # If Wikipedia API fails, try Jina Reader
+                app_logger.info(f"Wikipedia API failed, falling back to Jina Reader")
+                jina_content = await self._scrape_with_jina(client, url, max_length)
+                if jina_content:
+                    result = f"=== Content from: {title} ===\n"
+                    result += f"Source: {url}\n"
+                    result += jina_content
+                    app_logger.info(f"Successfully fetched {len(jina_content)} chars")
+                    return result
 
             app_logger.info(f"Scraping content from: {url} (type: {search_type})")
 

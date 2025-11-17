@@ -82,9 +82,9 @@ class ChatService:
         if search_type == SearchType.WEATHER:
             return await WeatherService.get_weather(search_query)
         elif search_type == SearchType.REDDIT:
-            return await search_service.perform_search(SearchType.REDDIT, f"reddit {search_query}")
+            return await search_service.perform_search(SearchType.REDDIT, f"site:reddit.com {search_query}")
         elif search_type == SearchType.WIKIPEDIA:
-            return await search_service.perform_search(SearchType.WIKIPEDIA, f"wikipedia {search_query}")
+            return await search_service.perform_search(SearchType.WIKIPEDIA, f"site:wikipedia.org {search_query}")
         else:
             return await search_service.perform_search(search_type, search_query)
 
