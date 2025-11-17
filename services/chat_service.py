@@ -35,24 +35,6 @@ class ChatService:
     }
 
     @staticmethod
-    def direct_search_detection(user_query: str) -> tuple[bool, str, str]:
-        """Detect explicit search intent"""
-        query_lower = user_query.lower()
-        # Reddit keywords
-        if re.search(r"reddit|people think|opinions|people saying about|opinion|reviews", query_lower):
-            return True, SearchType.REDDIT, user_query
-
-        # Wikipedia keywords
-        if re.search(r"wikipedia|wiki", query_lower):
-            return True, SearchType.WIKIPEDIA, user_query
-
-        # Google search for recency
-        if re.search(r"recent|latest|2025|2026|this year", query_lower):
-            return True, SearchType.GOOGLE, user_query
-
-        return False, "", ""
-
-    @staticmethod
     def preflight_search_check(user_query: str) -> bool:
         """Pre-flight check: Detect recency/realtime indicators."""
         query_lower = user_query.lower()
@@ -399,28 +381,6 @@ class ChatService:
         )
 
     @staticmethod
-    async def _handle_direct_search(context: ChatContext,search_type: str,search_query: str) -> AsyncIterator[FlowStep]:
-        """Handle direct search detection flow."""
-        app_logger.info(f"Direct search: {search_type} - '{search_query}'")
-
-        # Execute search
-        search_results, source_url = await ChatService.execute_search(
-            context, search_type, search_query
-        )
-
-        search_result = SearchResult(
-            performed=True,
-            search_type=search_type,
-            search_query=search_query,
-            search_results=search_results,
-            source_url=source_url
-        )
-
-        # Yield search and response
-        async for step in ChatService._yield_search_and_response(search_result, context):
-            yield step
-
-    @staticmethod
     async def _handle_search_tag_detected(search_result: SearchResult,context: ChatContext) -> AsyncIterator[FlowStep]:
         """Handle flow when SEARCH tag is detected in LLM response."""
         app_logger.info("SEARCH tag detected")
@@ -485,14 +445,6 @@ class ChatService:
     async def orchestrate_chat_flow(context: ChatContext) -> AsyncIterator[FlowStep]:
         """Core flow orchestrator that yields decision points."""
         is_small = Config.is_small_model(context.model_name)
-
-        # DIRECT SEARCH DETECTION
-        has_direct_intent, search_type, search_query = ChatService.direct_search_detection(context.prompt)
-
-        if has_direct_intent:
-            async for step in ChatService._handle_direct_search(context, search_type, search_query):
-                yield step
-            return
 
         if is_small:
             # SMALL MODEL - Scenario A: Pre-flight detects a recency pattern

@@ -1,120 +1,108 @@
-# Ollama Mobile Bridge
+# ChatLocalLLM: An Agentic Backend for Local LLMs
 
-A FastAPI-based intelligent bridge that enhances local Ollama LLM models with real-time web search, weather information, and context-aware chat capabilities. This application automatically detects when queries require up-to-date information and augments LLM responses with current data from the web.
+FastAPI-based application that serves as an intelligent backend, augmenting local models with real-time web search, weather information, and a persistent memory, all orchestrated through a sophisticated, multi-step Retrieval-Augmented Generation pipeline.
 
-## Features
+It's designed to be a robust, private, and powerful engine for building applications on top of local LLMs.
 
-- **Intelligent Search Detection**: Automatically identifies queries requiring up-to-date information
-- **Streaming Responses**: Server-Sent Events (SSE) for real-time token-by-token responses
-- **Context-Aware**: Maintains conversation history for coherent multi-turn dialogues
-- **User Memory**: Memory for personalized responses (preferences, location, etc.)
-- **Token Management**: Automatically truncates history to fit context limits, with dynamic re-adjustment for search results
-- **Async Architecture**: Fully asynchronous for optimal performance
+## Core Features
 
-## Architecture
+- **RAG Pipeline**: The system uses a multi-step reasoning process to decide if a query needs fresh data, generates its own search queries, and synthesizes information for a final answer.
+- **Tool Use**: Automatically detects the user's intent and routes queries to the appropriate tool, including Google Search, Reddit, Wikipedia, and a live Weather API.
+- **Streaming API**: Delivers responses using Server-Sent Events (SSE), providing real-time status updates and token-by-token streaming.
+- **Context Management**: Automatically manages the LLM's context window, truncating conversation history to prevent overflow while dynamically making space for incoming search results.
+- **User Memory & Personalization**: A `user_memory` field allows for personalized interactions by providing the LLM with persistent user context (e.g., location, preferences).
+- **Secure & Asynchronous**: Built on FastAPI for high-performance async operations and secured with a simple and effective API key middleware.
 
-```
-ChatLocalLLM/
-├── main.py                      # Application entry point
-├── auth.py                      # Authentication middleware.
-├── config.py                    # Configuration and environment variables
-├── models/
-│   ├── api_models.py            # API request/response models
-│   └── chat_models.py           # Internal data structures
-├── routes/
-│   ├── chat.py                  # Chat endpoints (standard & streaming)
-│   └── models_route.py          # Model listing endpoints
-├── services/
-│   ├── chat_service.py          # Core orchestration logic
-│   ├── search.py                # Brave Search API integration
-│   └── weather.py               # OpenWeatherMap integration
-└── utils/
-    ├── constants.py             # System prompts and constants
-    ├── html_parser.py           # HTML text extraction utilities
-    ├── logger.py                # Logging configuration
-    └── token_manager.py         # Context window and token management
-```
+## Agentic RAG Pipeline
+
+The heart of this project is its decision-making engine. The service uses a series of steps to reason about the user's request.
+
+**Orchestration Flow:**
+1. **Pre-flight Check**: First, the system analyzes the query for a keyword combination pattern indicating a need for recent information.
+2. **LLM Call #1 (Reasoning Step)**:
+    - If recency is suspected, the LLM is prompted to generate a precise search query.
+    - Otherwise, it attempts to answer the query directly from its own knowledge.
+3. **Response Analysis**: The initial response is analyzed for "knowledge cutoff" phrases and if detected, the flow is re-routed to generate a search query.
+4. **Dynamic Search Execution**: The generated query is run against the appropriate tool (Google, Weather, etc.).
+5. **LLM Call #2 (Synthesis Step)**: The search results are injected into a new, specialized prompt, and the LLM is called a final time to generate a conversational answer based on the retrieved information.
+
+---
 
 ## Prerequisites
 
-- Python 3.14+
+- Python 3.11+
 - [Ollama](https://ollama.ai/) installed and running locally
 - Brave Search API key (optional, for web search)
 - OpenWeatherMap API key (optional, for weather data)
 
 ## Installation
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/atpritam/Ollama-Mobile-Bridge.git
-   cd Ollama-Mobile-Bridge
-   ```
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/atpritam/Ollama-Mobile-Bridge.git
+    cd Ollama-Mobile-Bridge
+    ```
 
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+2.  **Install dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-3. **Set up environment variables**:
-   ```bash
-   cp .env.example .env
-   ```
+3.  **Set up environment variables**:
+    ```bash
+    cp .env.example .env
+    ```
 
-4. **Configure API keys** in `.env`:
-   ```env
-   BRAVE_SEARCH_API_KEY=your_brave_search_key
-   OPENWEATHER_API_KEY=your_openweather_api_key
-   API_KEY=your_app_api_key
-   ```
+4.  **Configure API keys** in `.env`:
+    ```env
+    BRAVE_SEARCH_API_KEY=your_brave_search_key
+    OPENWEATHER_API_KEY=your_openweather_api_key
+    API_KEY=your_app_api_key
+    ```
 
-   - **Brave Search API**: Get free API key (2,000 queries/month) at [https://brave.com/search/api/](https://brave.com/search/api/)
-   - **OpenWeatherMap API**: Get free API key (1,000 calls/day) at [https://openweathermap.org/api](https://openweathermap.org/api)
+   - **Brave Search API**: Get a free API key at [Brave Search API](https://brave.com/search/api/)
+   - **OpenWeatherMap API**: Get a free API key at [OpenWeatherMap API](https://openweathermap.org/api)
 
 ## Quick Start
 
-1. **Ensure Ollama is running**:
-   ```bash
-   ollama serve
-   ```
+1.  **Ensure Ollama is running**:
+    ```bash
+    ollama serve
+    ```
 
-2. **Start the server**:
-   ```bash
-   python main.py
-   ```
+2.  **Start the server**:
+    ```bash
+    python main.py
+    ```
 
-3. **The server will start on** `http://0.0.0.0:8000`
+3.  The server will start on `http://0.0.0.0:8000`.
 
 ## API Endpoints
-
-### Health Check
-```http
-GET /
-```
-Returns basic health status.
 
 ### List Available Models
 ```http
 GET /list
+X-API-Key: your_app_api_key
 ```
-Returns all Ollama models available on your system with their details.
+Returns all Ollama models available on your system.
 
 ### Standard Chat
 ```http
-POST http://127.0.0.1:8000/chat
+POST /chat
 Content-Type: application/json
-X-API-Key: API_KEY
+X-API-Key: your_app_api_key
 
 {
-  "model": "llama3.2:3b",
-  "prompt": "What about Paris?",
+  "model": "llama3:8b",
+  "prompt": "What is the latest news on it?",
   "history": [
     {
       "role": "user",
-      "content": "What's the weather in London?"
+      "content": "Whatis the Artemis program?"
     },
     {
       "role": "assistant",
-      "content": "The Weather today in London is 14 degrees Celsius."
+      "content": "The Artemis program is a NASA mission aimed at returning humans to the lunar surface."
     }
   ]
 }
@@ -122,49 +110,40 @@ X-API-Key: API_KEY
 
 ### Streaming Chat
 ```http
-POST http://127.0.0.1:8000/chat/stream
+POST /chat/stream
 Content-Type: application/json
-X-API-Key: API_KEY
+X-API-Key: your_app_api_key
 
 {
-  "model": "llama3.2:3b-instruct-q4_K_M",
-  "prompt": "Recommend me a good restaurant for tonight",
-  "user_memory": "I live in Boston. I have a nut allergy. I don't like to go out on rain."
+  "model": "llama3:8b",
+  "prompt": "Recommend a good sci-fi book to read.",
+  "user_memory": "I live in Boston. I have already read 'Dune' and 'The Expanse' series."
 }
 ```
 
-Returns Server-Sent Events with real-time updates:
-- `status`: Current processing stage (initializing, thinking, searching, reading, generating)
-- `token`: Individual response tokens
-- `done`: Final response and metadata
+The streaming endpoint returns Server-Sent Events:
+- `event: status`: The current stage (`thinking`, `searching_google`, `generating`).
+- `event: token`: A piece of the response.
+- `event: done`: The final metadata object.
 
-### API Response
+### Example API Response
 ```json
 {
-  "model": "llama3.2:3b",
+  "model": "llama3:8b",
   "context_messages_count": 3,
   "search_performed": true,
   "tokens": {
     "used": 137,
-    "limit": 98304,
-    "model_max": 131072,
-    "usage_percent": 0.1
+    "limit": 7900,
+    "model_max": 8192,
+    "usage_percent": 1.7
   },
-  "search_type": "weather",
-  "search_query": "Paris",
-  "source": "https://openweathermap.org",
-  "response": "llm model response"
+  "search_type": "google",
+  "search_query": "latest news Artemis program",
+  "source": "https://www.nasa.gov/artemis-i/",
+  "response": "The Artemis II mission is scheduled for April 2026..."
 }
 ```
-
-## Development
-
-### Project Structure
-
-- **models/**: Pydantic data models for type safety
-- **routes/**: FastAPI route handlers
-- **services/**: Core business logic (chat orchestration, search, weather)
-- **utils/**: Helper utilities (HTML parsing, logging, constants)
 
 ## Contributing
 
