@@ -31,6 +31,11 @@ class ChatContext:
         """Get user prompt from request."""
         return self.request.prompt
 
+    @property
+    def user_memory(self) -> str | None:
+        """Get user memory from request."""
+        return self.request.user_memory
+
     def next_call_number(self) -> int:
         """Increment and return the next LLM call number."""
         self.call_count += 1

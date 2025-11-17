@@ -21,7 +21,7 @@ WIKI: <query>
 
 EXAMPLES (NO explanations. NO other text):
     WEATHER: Boston
-    REDDIT: RTX 5080 opinions
+    REDDIT: RTX 5080 opinions (prefer REDDIT for opinions, reviews, discussions)
     GOOGLE: latest news on apple stock
 
 Either respond with the search query or your known answer, not both.
@@ -30,36 +30,38 @@ WRONG:
     Models are now creating increasingly sophisticated video and audio content. I'm going to perform a Google search. GOOGLE: latest AI developments"""
 
 # Simplified system prompt for small models
-SIMPLE_SYSTEM_PROMPT = """You are a chat assistant with external web access. Today's date: {current_date}
+SIMPLE_SYSTEM_PROMPT = """You are a chat conversational assistant. Today's date: {current_date}
 {user_context}
-Given today's date, If you don't know something or user wants 'recent / current' info,
- respond in these EXACT formats:
+Given today's date, If you don't know something or user wants 'recent / current' info, respond with:
 WEATHER: <city>
 REDDIT: <topic>
 GOOGLE: <query>
-WIKI: <query>
+WIKIPEDIA: <query>
+
+Prefer REDDIT for opinions, reviews and discussions.
+Prefer WEATHER for current weather requests.
 
 EXAMPLES (NO explanations. NO other text):
     WEATHER: Boston
     REDDIT: RTX 5080 opinions
     GOOGLE: latest news on apple stock
 
-Otherwise, If you know the answer and used did not request recency, just answer it normally."""
+Otherwise, If you know the answer and used did not request recency, just answer it conversationally."""
 
 # System prompt for extracting search query when model mentions knowledge cutoff
 SEARCH_QUERY_EXTRACTION_PROMPT = """You are a search query generator. Today's date: {current_date}
 Generate ONE search query in the EXACT format below based on the user's question.
-
+{user_context}
 ONLY AVAILABLE Search formats:
 WEATHER: <city>
 REDDIT: <topic>
-WIKI: <query>
+WIKIPEDIA: <query>
 GOOGLE: <query>
 
-- Output ONLY the SEARCH line, nothing else
-- Choose the best search type for the question
+Prefer REDDIT for community/People opinions, reviews and discussions.
+Prefer WEATHER for current weather requests.
 
-Examples:
+EXAMPLES (NO explanations. NO other text):
 WEATHER: Boston
 REDDIT: RTX 5080 opinions
 GOOGLE: latest news on apple stock"""

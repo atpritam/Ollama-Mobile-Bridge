@@ -31,7 +31,8 @@ class ChatService:
         'WEATHER': SearchType.WEATHER,
         'GOOGLE': SearchType.GOOGLE,
         'REDDIT': SearchType.REDDIT,
-        'WIKI': SearchType.WIKIPEDIA
+        'WIKI': SearchType.WIKIPEDIA,
+        'WIKIPEDIA': SearchType.WIKIPEDIA,
     }
 
     @staticmethod
@@ -110,8 +111,10 @@ class ChatService:
         Use specialized prompt to extract search query from user question.
         This is called when the model mentioned knowledge cutoff or when pre-flight triggers.
         """
+        user_context = ChatService._format_user_context(context.user_memory)
         extraction_system_prompt = SEARCH_QUERY_EXTRACTION_PROMPT.format(
-            current_date=datetime.now().strftime("%Y-%m-%d")
+            current_date=datetime.now().strftime("%Y-%m-%d"),
+            user_context = user_context
         )
 
         extraction_messages = [
@@ -121,7 +124,7 @@ class ChatService:
         if context.request.history:
             truncated_history, messages_included = TokenManager.truncate_history_to_fit(
                 system_prompt=extraction_system_prompt,
-                user_memory=context.request.user_memory or "",
+                user_memory=context.user_memory or "",
                 current_prompt=context.prompt,
                 history=[{"role": msg.role, "content": msg.content} for msg in context.request.history],
                 model_name=context.model_name
@@ -336,7 +339,7 @@ class ChatService:
         """Prepare messages with search results injected into system prompt."""
         search_system_prompt = SEARCH_RESULT_SYSTEM_PROMPT.format(
             current_date=datetime.now().strftime("%Y-%m-%d"),
-            user_context=ChatService._format_user_context(context.request.user_memory),
+            user_context=ChatService._format_user_context(context.user_memory),
             search_results=search_results
         )
 
