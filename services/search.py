@@ -230,35 +230,38 @@ class SearchService:
                 app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Wikipedia articles in parallel")
 
             else:
-                # Google:
-                google_results = web_results[:scrape_count_target]
+                # Google: Sequential scraping with fallback to next URLs if first returns empty content
+                scraped_count = 0
+                attempted_count = 0
+                max_attempts = min(len(web_results), scrape_count_target * 3)
 
-                scrape_tasks = []
-                task_urls = []
-                for idx, result in enumerate(google_results):
+                for idx, result in enumerate(web_results[:max_attempts]):
+                    if scraped_count >= scrape_count_target:
+                        break
+
                     result_url = result.get("url")
                     if not result_url:
                         continue
 
+                    attempted_count += 1
+
                     if source_url is None:
                         source_url = result_url
 
-                    task = self._scrape_page(
+                    content = await self._scrape_page(
                         client, result_url, result.get('title', f'Result {idx+1}'), search_type, max_length_per_page
                     )
-                    scrape_tasks.append(task)
-                    task_urls.append(result_url)
 
-                scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
-
-                scraped_count = 0
-                for idx, content in enumerate(scraped_contents):
-                    if content and not isinstance(content, Exception):
+                    if isinstance(content, Exception):
+                        app_logger.warning(f"Scraping failed for {result_url}: {content}")
+                    elif content:
                         results.append(content)
-                        source_urls.append(task_urls[idx])
+                        source_urls.append(result_url)
                         scraped_count += 1
+                    else:
+                        app_logger.warning(f"Scraping returned empty for {result_url}, trying next URL")
 
-                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Google pages in parallel")
+                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Google pages (tried {attempted_count} URLs)")
 
         # Additional search results (Brave summaries)
         if data.get("web") and data["web"].get("results"):

@@ -1,16 +1,42 @@
-# Ollama Mobile Bridge: Intelligent Agentic Backend for Local LLMs
+# Ollama Mobile Bridge: Intelligent Agentic LLM Orchestration
 
-An adaptive FastAPI backend that transforms local LLMs into intelligent agents with real-time web access, autonomous search capabilities, and sophisticated context management. Built to maximize the capabilities of models of any size through dynamic resource allocation and multi-step reasoning.
+FastAPI backend that transforms local LLMs into intelligent agents with real-time web access, autonomous search routing, and sophisticated context management. Built to maximize the capabilities of models of any size through dynamic resource allocation and multi-step reasoning.
+
+Model-agnostic architecture, supports all models available through Ollama ([See Models](https://ollama.ai/models)). System automatically adjusts based on model capability (3B vs 70B).
 
 ## Core Features
 
-- **RAG Pipeline**: The system uses a multi-step reasoning process to decide if a query needs fresh data, generates its own search queries, and synthesizes information for a final answer.
-- **Tool Use**: Automatically detects the user's intent and routes queries to the appropriate tool, including Google Search, Reddit, Wikipedia, and a live Weather API.
+- **RAG Pipeline**: Multi-step reasoning process, detects if query needs fresh data, generates its own search queries, and synthesizes information for a final answer.
+- **Tool Calling**: Detects user intent and routes to specialized tools (Google, Reddit, Wikipedia, Weather).
 - **Streaming API**: Delivers responses using Server-Sent Events (SSE), providing real-time status updates and token-by-token streaming.
 - **Context Management**: Automatically manages the LLM's context window, truncating conversation history to prevent overflow while dynamically making space for incoming search results.
-- **User Memory & Personalization**: A `user_memory` field allows for personalized interactions by providing the LLM with persistent user context (e.g., location, preferences).
-- **Secure & Asynchronous**: Built on FastAPI for high-performance async operations and secured with a simple and effective API key middleware.
-- **Model-Adaptive**: Automatically detects model size and adjusts search depth, content limits, and reasoning strategies accordingly
+- **User Memory & Personalization**: Allows for personalized interactions by providing the LLM with persistent user context.
+- **Secure & Asynchronous**: Built on FastAPI for high-performance async operations and secured with an effective `API key middleware`.
+- **Concurrent web scraping**: Parallel async fetching with type-specific strategies and sequential fallback when fetch returns empty content.
+- **Model-Adaptive**: Automatically detects model size and adjusts search depth, content limits, and reasoning strategies accordingly.
+
+## Tech Stack
+
+  **LLM & AI:**
+  - LLM Orchestration (Ollama)
+  - RAG (Retrieval-Augmented Generation)
+  - Agentic AI (autonomous tool selection & self-healing)
+
+  **APIs & Data:**
+  - Brave Search API, Wikipedia API, OpenWeatherMap API
+  - Web scraping (httpx async, Beautiful Soup via custom parser)
+  - Jina Reader API (JavaScript-rendered content fallback)
+
+  **Backend:**
+  - FastAPI (async Python web framework)
+  - Server-Sent Events (SSE streaming)
+  - Pydantic (data validation)
+  - Asyncio (concurrent operations)
+
+  **Production:**
+  - Token management & context window optimization
+  - Security (API auth, content validation, rate limiting)
+  - Error handling & fallback mechanisms
 
 ## Architecture
 
@@ -31,7 +57,7 @@ Ollama-Mobile-Bridge/
 │   └── weather.py               # OpenWeatherMap integration
 └── utils/
     ├── constants.py             # System prompts and constants
-    ├── html_parser.py           # HTML parsing & content extractio
+    ├── html_parser.py           # HTML parsing & content extraction
     ├── logger.py                # Logging configuration
     └── token_manager.py         # Context window and token management
 ```
