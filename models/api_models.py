@@ -15,6 +15,6 @@ class ChatRequest(BaseModel):
     """Chat request model with conversation history."""
     model: str
     prompt: str
-    history: Optional[List[Message]] = Field(None, max_length=30)
+    history: Optional[List[Message]] = None
     system_prompt: Optional[str] = None
     user_memory: Optional[str] = Field(None, max_length=200, description="User preferences and context to remember")

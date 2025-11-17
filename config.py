@@ -23,7 +23,6 @@ class Config:
 
     # Application Settings
     APP_TITLE: str = "Ollama Mobile Bridge"
-    MAX_HISTORY_MESSAGES: int = 30
     DEFAULT_SEARCH_RESULTS_COUNT: int = 5
 
     # Timeouts (in seconds)

@@ -1,8 +1,6 @@
-# ChatLocalLLM: An Agentic Backend for Local LLMs
+# Ollama Mobile Bridge: Intelligent Agentic Backend for Local LLMs
 
-FastAPI-based application that serves as an intelligent backend, augmenting local models with real-time web search, weather information, and a persistent memory, all orchestrated through a sophisticated, multi-step Retrieval-Augmented Generation pipeline.
-
-It's designed to be a robust, private, and powerful engine for building applications on top of local LLMs.
+An adaptive FastAPI backend that transforms local LLMs into intelligent agents with real-time web access, autonomous search capabilities, and sophisticated context management. Built to maximize the capabilities of models of any size through dynamic resource allocation and multi-step reasoning.
 
 ## Core Features
 
@@ -12,25 +10,35 @@ It's designed to be a robust, private, and powerful engine for building applicat
 - **Context Management**: Automatically manages the LLM's context window, truncating conversation history to prevent overflow while dynamically making space for incoming search results.
 - **User Memory & Personalization**: A `user_memory` field allows for personalized interactions by providing the LLM with persistent user context (e.g., location, preferences).
 - **Secure & Asynchronous**: Built on FastAPI for high-performance async operations and secured with a simple and effective API key middleware.
+- **Model-Adaptive**: Automatically detects model size and adjusts search depth, content limits, and reasoning strategies accordingly
 
-## Agentic RAG Pipeline
+## Architecture
 
-The heart of this project is its decision-making engine. The service uses a series of steps to reason about the user's request.
-
-**Orchestration Flow:**
-1. **Pre-flight Check**: First, the system analyzes the query for a keyword combination pattern indicating a need for recent information.
-2. **LLM Call #1 (Reasoning Step)**:
-    - If recency is suspected, the LLM is prompted to generate a precise search query.
-    - Otherwise, it attempts to answer the query directly from its own knowledge.
-3. **Response Analysis**: The initial response is analyzed for "knowledge cutoff" phrases and if detected, the flow is re-routed to generate a search query.
-4. **Dynamic Search Execution**: The generated query is run against the appropriate tool (Google, Weather, etc.).
-5. **LLM Call #2 (Synthesis Step)**: The search results are injected into a new, specialized prompt, and the LLM is called a final time to generate a conversational answer based on the retrieved information.
-
----
+```
+Ollama-Mobile-Bridge/
+├── main.py                      # Application entry point
+├── auth.py                      # Authentication middleware
+├── config.py                    # Dynamic configuration & model detection
+├── models/
+│   ├── api_models.py            # Pydantic API request/response models
+│   └── chat_models.py           # Internal data structures
+├── routes/
+│   ├── chat.py                  # Chat endpoints (standard & streaming)
+│   └── models_route.py          # Model listing endpoints
+├── services/
+│   ├── chat_service.py          # Core orchestration logic & decision flow
+│   ├── search.py                # Brave Search API integration & web scraping
+│   └── weather.py               # OpenWeatherMap integration
+└── utils/
+    ├── constants.py             # System prompts and constants
+    ├── html_parser.py           # HTML parsing & content extractio
+    ├── logger.py                # Logging configuration
+    └── token_manager.py         # Context window and token management
+```
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - [Ollama](https://ollama.ai/) installed and running locally
 - Brave Search API key (optional, for web search)
 - OpenWeatherMap API key (optional, for weather data)
@@ -82,7 +90,7 @@ The heart of this project is its decision-making engine. The service uses a seri
 ### List Available Models
 ```http
 GET /list
-X-API-Key: your_app_api_key
+X-API-Key: app_api_key
 ```
 Returns all Ollama models available on your system.
 
@@ -90,10 +98,10 @@ Returns all Ollama models available on your system.
 ```http
 POST /chat
 Content-Type: application/json
-X-API-Key: your_app_api_key
+X-API-Key: app_api_key
 
 {
-  "model": "llama3:8b",
+  "model": "llama3.2:3b",
   "prompt": "What is the latest news on it?",
   "history": [
     {
@@ -112,10 +120,10 @@ X-API-Key: your_app_api_key
 ```http
 POST /chat/stream
 Content-Type: application/json
-X-API-Key: your_app_api_key
+X-API-Key: app_api_key
 
 {
-  "model": "llama3:8b",
+  "model": "llama3.2:3b",
   "prompt": "Recommend a good sci-fi book to read.",
   "user_memory": "I live in Boston. I have already read 'Dune' and 'The Expanse' series."
 }
@@ -129,14 +137,14 @@ The streaming endpoint returns Server-Sent Events:
 ### Example API Response
 ```json
 {
-  "model": "llama3:8b",
+  "model": "llama3.2:3b",
   "context_messages_count": 3,
   "search_performed": true,
   "tokens": {
-    "used": 137,
-    "limit": 7900,
-    "model_max": 8192,
-    "usage_percent": 1.7
+    "used": 130,
+    "limit": 98304,
+    "model_max": 131072,
+    "usage_percent": 0.1
   },
   "search_type": "google",
   "search_query": "latest news Artemis program",

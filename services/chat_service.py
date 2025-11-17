@@ -119,11 +119,14 @@ class ChatService:
         ]
 
         if context.request.history:
-            limited_history = context.request.history[-Config.MAX_HISTORY_MESSAGES:]
-            extraction_messages.extend([
-                {"role": msg.role, "content": msg.content}
-                for msg in limited_history
-            ])
+            truncated_history, messages_included = TokenManager.truncate_history_to_fit(
+                system_prompt=extraction_system_prompt,
+                user_memory=context.request.user_memory or "",
+                current_prompt=context.prompt,
+                history=[{"role": msg.role, "content": msg.content} for msg in context.request.history],
+                model_name=context.model_name
+            )
+            extraction_messages.extend(truncated_history)
 
         extraction_messages.append({
             "role": "user",
