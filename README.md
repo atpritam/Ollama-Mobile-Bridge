@@ -32,11 +32,11 @@ Model-agnostic architecture, supports all models available through Ollama ([See 
   - Httpx connection pooling
   - Pydantic (data validation)
   - Asyncio (concurrent operations)
+  - SQLite (persistent cache)
 
   **Production:**
   - Token management & context window optimization
   - Security (API auth, content validation, rate limiting)
-  - Caching Query/url content (similarity detection, SimHash, WordNet synonym expansion)
   - Error handling & fallback mechanisms
 
 ## Architecture
