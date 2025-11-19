@@ -2,7 +2,7 @@
 
 FastAPI backend that transforms local LLMs into intelligent agents with real-time web access, autonomous search routing, and sophisticated context management. Built to maximize the capabilities of models of any size through dynamic resource allocation and multi-step reasoning.
 
-Model-agnostic architecture, supports all models available through Ollama ([See Models](https://ollama.ai/models)). System automatically adjusts based on model capability (3B vs 70B).
+Model-agnostic architecture, supports all models available through Ollama ([See Models](https://ollama.ai/models)). System automatically adjusts reasoning and strategies based on model capability (3B vs 70B).
 
 ## Core Features
 
@@ -13,7 +13,7 @@ Model-agnostic architecture, supports all models available through Ollama ([See 
 - **User Memory & Personalization**: Allows for personalized interactions by providing the LLM with persistent user context.
 - **Secure & Asynchronous**: Built on FastAPI for high-performance async operations and secured with an effective `API key middleware`.
 - **Concurrent web scraping**: Parallel async fetching with type-specific strategies for all search types with smart fallback to additional URLs when content is empty.
-- **Model-Adaptive**: Automatically detects model size and adjusts search depth, content limits, and reasoning strategies accordingly.
+- **Smart Caching**: Multi-level query and URL content caching with intelligent similarity detection using Jaccard/Cosine, SimHash, and WordNet synonyms to avoid redundant searches and web scraping.
 
 ## Tech Stack
 
@@ -36,6 +36,7 @@ Model-agnostic architecture, supports all models available through Ollama ([See 
   **Production:**
   - Token management & context window optimization
   - Security (API auth, content validation, rate limiting)
+  - Caching Query/url content (similarity detection, SimHash, WordNet synonym expansion)
   - Error handling & fallback mechanisms
 
 ## Architecture
@@ -59,7 +60,10 @@ Ollama-Mobile-Bridge/
     ├── constants.py             # System prompts and constants
     ├── html_parser.py           # HTML parsing & content extraction
     ├── logger.py                # Logging configuration
-    └── token_manager.py         # Context window and token management
+    ├── http_client.py           # httpx connection pooling
+    ├── token_manager.py         # Context window and token management
+    ├── cache.py                 # Search result caching & similarity detection
+    └── text_similarity.py       # Query similarity algorithms
 ```
 
 ## Prerequisites
@@ -175,6 +179,7 @@ The streaming endpoint returns Server-Sent Events:
   "search_type": "google",
   "search_query": "latest news Artemis program",
   "source": "https://www.nasa.gov/artemis-i/",
+  "search_id": 2,
   "response": "The Artemis II mission is scheduled for April 2026..."
 }
 ```

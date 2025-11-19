@@ -1,7 +1,7 @@
 """
 Web search service using Brave Search API with content scraping.
 """
-from typing import Tuple, Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Tuple, Optional, List, Dict, Any, TYPE_CHECKING, LiteralString, Coroutine
 import asyncio
 import httpx
 
@@ -10,6 +10,7 @@ from utils.constants import SearchType
 from utils.html_parser import HTMLParser
 from utils.logger import app_logger
 from utils.http_client import HTTPClientManager
+from utils.cache import get_search_cache
 
 if TYPE_CHECKING:
     from routes.chat import ChatContext
@@ -70,19 +71,29 @@ class SearchService:
         else:
             return 5
 
-    async def perform_search(self, search_type: str, query: str) -> Tuple[str, Optional[str]]:
+    async def perform_search(self, search_type: str, query: str) -> Tuple[str, Optional[str], Optional[int]]:
         """
         Perform web search using Brave Search API with type-specific optimizations.
+        Checks cache first to avoid redundant searches.
 
         Args:
             search_type: Type of search (google, wikipedia, reddit, weather)
             query: Search query string
 
         Returns:
-            Tuple of (search_results, source_url)
+            Tuple of (search_results, source_url, search_id)
+            search_id is used to reference this search in conversation history
         """
         if not Config.BRAVE_SEARCH_API_KEY:
-            return f"Search query: '{query}'\nSearch API key not configured. Cannot perform search.", None
+            return f"Search query: '{query}'\nSearch API key not configured. Cannot perform search.", None, None
+
+        # Check cache first
+        cache = get_search_cache()
+        cached = cache.get(search_type, query)
+        if cached:
+            results, source_url, metadata = cached
+            search_id = metadata["search_id"]
+            return results, source_url, search_id
 
         try:
             client = HTTPClientManager.get_search_client()
@@ -103,46 +114,51 @@ class SearchService:
 
             if response.status_code == 200:
                 data = response.json()
-                return await self._process_search_results(data, search_type)
+                return await self._process_search_results(data, search_type, query)
             elif response.status_code == 401:
-                return f"Search query: '{query}'\nInvalid API key. Please check your BRAVE_SEARCH_API_KEY.", None
+                return f"Search query: '{query}'\nInvalid API key. Please check your BRAVE_SEARCH_API_KEY.", None, None
             elif response.status_code == 429:
-                return f"Search query: '{query}'\nAPI rate limit exceeded. Please try again later.", None
+                return f"Search query: '{query}'\nAPI rate limit exceeded. Please try again later.", None, None
             else:
-                return f"Search query: '{query}'\nSearch API error (status {response.status_code}).", None
+                return f"Search query: '{query}'\nSearch API error (status {response.status_code}).", None, None
 
         except httpx.TimeoutException as e:
             app_logger.error(f"Search timed out: {str(e)}")
-            return f"Search query: '{query}'\nSearch timed out. Please try again.", None
+            return f"Search query: '{query}'\nSearch timed out. Please try again.", None, None
         except httpx.RequestError as e:
             app_logger.error(f"Search request failed: {str(e)}")
-            return f"Search query: '{query}'\nSearch request failed: {str(e)}", None
+            return f"Search query: '{query}'\nSearch request failed: {str(e)}", None, None
         except Exception as e:
             app_logger.error(f"Unexpected search error: {str(e)}")
-            return f"Search query: '{query}'\nUnexpected error during search.", None
+            return f"Search query: '{query}'\nUnexpected error during search.", None, None
 
-    async def _process_search_results(self, data: dict, search_type: str) -> Tuple[str, Optional[str]]:
+    async def _process_search_results(self, data: dict, search_type: str, query: str) -> tuple[
+                                                                                             LiteralString, LiteralString | None | Any, int] | \
+                                                                                         tuple[str, None, None]:
         """
         Process search results and scrape content with type-specific handling.
+        Caches results for future use.
 
         Args:
             data: Search API response data
             search_type: Type of search to optimize result processing
+            query: Original search query (for caching)
 
         Returns:
-            Tuple of (processed_results, source_url)
+            Tuple of (processed_results, source_url, search_id)
         """
         client = HTTPClientManager.get_general_client()
 
-        results = []
+        scraped_contents_dict = {}  # URL -> content mapping
         source_url = None
-        source_urls = []
+        summaries_text = None
 
         # Infobox/Featured snippet
+        infobox_content = None
         if data.get("infobox"):
             infobox = data["infobox"]
             if infobox.get("description"):
-                results.append(f"Quick Answer: {infobox['description']}")
+                infobox_content = f"Quick Answer: {infobox['description']}"
 
         # Scrape content from top result(s)
         if data.get("web") and data["web"].get("results"):
@@ -160,36 +176,51 @@ class SearchService:
                 if not reddit_results:
                     reddit_results = web_results[:scrape_count_target]
 
+                # Get URLs to check/scrape
+                urls_to_check = [r.get("url") for r in reddit_results if r.get("url")]
+
+                # Check cache for these URLs
+                cache = get_search_cache()
+                cached_url_contents = cache.get_cached_urls(urls_to_check, search_type)
+                scraped_contents_dict.update(cached_url_contents)
+
+                # Filter out cached URLs
+                urls_to_scrape = [url for url in urls_to_check if url not in cached_url_contents]
+                url_to_result = {r.get("url"): r for r in reddit_results if r.get("url")}
+
                 scrape_tasks = []
-                task_urls = []  # Track URLs for each task
-                for idx, result in enumerate(reddit_results):
-                    result_url = result.get("url")
-                    if not result_url:
+                task_urls = []
+                for url in urls_to_scrape:
+                    result = url_to_result.get(url)
+                    if not result:
                         continue
 
                     if source_url is None:
-                        source_url = result_url
+                        source_url = url
 
                     task = self._scrape_page(
-                        client, result_url, result.get('title', f'Reddit thread {idx+1}'), search_type, max_length_per_page
+                        client, url, result.get('title', 'Reddit thread'), search_type, max_length_per_page
                     )
                     scrape_tasks.append(task)
-                    task_urls.append(result_url)
+                    task_urls.append(url)
 
-                scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
+                if scrape_tasks:
+                    scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
 
-                scraped_count = 0
-                for idx, content in enumerate(scraped_contents):
-                    if isinstance(content, Exception):
-                        app_logger.warning(f"Reddit scraping failed for {task_urls[idx]}: {content}")
-                    elif content:
-                        results.append(content)
-                        source_urls.append(task_urls[idx])
-                        scraped_count += 1
-                    else:
-                        app_logger.warning(f"Reddit scraping returned empty for {task_urls[idx]}")
+                    scraped_count = 0
+                    for idx, content in enumerate(scraped_contents):
+                        if isinstance(content, Exception):
+                            app_logger.warning(f"Reddit scraping failed for {task_urls[idx]}: {content}")
+                        elif content:
+                            scraped_contents_dict[task_urls[idx]] = content
+                            scraped_count += 1
+                        else:
+                            app_logger.warning(f"Reddit scraping returned empty for {task_urls[idx]}")
 
-                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Reddit threads in parallel")
+                    app_logger.info(f"Scraped {scraped_count}/{len(task_urls)} Reddit threads in parallel")
+
+                total_threads = len(scraped_contents_dict)
+                app_logger.info(f"Total Reddit content: {total_threads} threads ({len(cached_url_contents)} from cache, {len(task_urls)} scraped)")
 
             elif search_type == SearchType.WIKIPEDIA:
                 wiki_results = [r for r in web_results[:5] if "wikipedia.org" in r.get("url", "")][:scrape_count_target]
@@ -198,32 +229,47 @@ class SearchService:
                 if not wiki_results:
                     wiki_results = web_results[:scrape_count_target]
 
+                # Get URLs to check/scrape
+                urls_to_check = [r.get("url") for r in wiki_results if r.get("url")]
+
+                # Check cache for these URLs
+                cache = get_search_cache()
+                cached_url_contents = cache.get_cached_urls(urls_to_check, search_type)
+                scraped_contents_dict.update(cached_url_contents)
+
+                # Filter out cached URLs
+                urls_to_scrape = [url for url in urls_to_check if url not in cached_url_contents]
+                url_to_result = {r.get("url"): r for r in wiki_results if r.get("url")}
+
                 scrape_tasks = []
                 task_urls = []
-                for idx, result in enumerate(wiki_results):
-                    result_url = result.get("url")
-                    if not result_url:
+                for url in urls_to_scrape:
+                    result = url_to_result.get(url)
+                    if not result:
                         continue
 
                     if source_url is None:
-                        source_url = result_url
+                        source_url = url
 
                     task = self._scrape_page(
-                        client, result_url, result.get('title', f'Article {idx+1}'), search_type, max_length_per_page
+                        client, url, result.get('title', 'Wikipedia article'), search_type, max_length_per_page
                     )
                     scrape_tasks.append(task)
-                    task_urls.append(result_url)
+                    task_urls.append(url)
 
-                scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
+                if scrape_tasks:
+                    scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
 
-                scraped_count = 0
-                for idx, content in enumerate(scraped_contents):
-                    if content and not isinstance(content, Exception):
-                        results.append(content)
-                        source_urls.append(task_urls[idx])
-                        scraped_count += 1
+                    scraped_count = 0
+                    for idx, content in enumerate(scraped_contents):
+                        if content and not isinstance(content, Exception):
+                            scraped_contents_dict[task_urls[idx]] = content
+                            scraped_count += 1
 
-                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Wikipedia articles in parallel")
+                    app_logger.info(f"Scraped {scraped_count}/{len(task_urls)} Wikipedia articles in parallel")
+
+                total_articles = len(scraped_contents_dict)
+                app_logger.info(f"Total Wikipedia content: {total_articles} articles ({len(cached_url_contents)} from cache, {len(task_urls)} scraped)")
 
             else:
                 # Google: Parallel scraping with smart result selection and fallback
@@ -231,6 +277,9 @@ class SearchService:
                 scraped_count = 0
                 urls_tried = 0
                 batch_size = scrape_count_target * 2
+
+                # Get cache once before the loop
+                cache = get_search_cache()
 
                 while scraped_count < scrape_count_target and urls_tried < max_total_attempts:
                     batch_start = urls_tried
@@ -240,24 +289,38 @@ class SearchService:
                     if not batch_results:
                         break
 
+                    # Get URLs for this batch
+                    batch_urls = [r.get("url") for r in batch_results if r.get("url")]
+
+                    # Check cache for batch URLs
+                    cached_url_contents = cache.get_cached_urls(batch_urls, search_type)
+                    scraped_contents_dict.update(cached_url_contents)
+                    scraped_count += len(cached_url_contents)
+
                     scrape_tasks = []
                     task_urls = []
-                    for idx, result in enumerate(batch_results):
+                    for result in batch_results:
                         result_url = result.get("url")
-                        if not result_url:
+                        if not result_url or result_url in cached_url_contents:
                             continue
+
+                        if scraped_count >= scrape_count_target:
+                            break
 
                         if source_url is None:
                             source_url = result_url
 
                         task = self._scrape_page(
-                            client, result_url, result.get('title', f'Result {batch_start + idx + 1}'), search_type, max_length_per_page
+                            client, result_url, result.get('title', 'Search result'), search_type, max_length_per_page
                         )
                         scrape_tasks.append(task)
                         task_urls.append(result_url)
 
                     if not scrape_tasks:
-                        break
+                        urls_tried += len(batch_results)
+                        if scraped_count >= scrape_count_target:
+                            break
+                        continue
 
                     # Scrape batch in parallel
                     scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
@@ -271,8 +334,7 @@ class SearchService:
                         if isinstance(content, Exception):
                             app_logger.warning(f"Scraping failed for {task_urls[idx]}: {content}")
                         elif content:
-                            results.append(content)
-                            source_urls.append(task_urls[idx])
+                            scraped_contents_dict[task_urls[idx]] = content
                             scraped_count += 1
                         else:
                             app_logger.warning(f"Scraping returned empty for {task_urls[idx]}")
@@ -281,14 +343,15 @@ class SearchService:
                     if scraped_count >= scrape_count_target:
                         break
 
-                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Google pages in parallel (tried {urls_tried} URLs)")
+                total_pages = len(scraped_contents_dict)
+                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Google pages in parallel (tried {urls_tried} URLs, {total_pages} total pages)")
 
         # Additional search results (Brave summaries)
         if data.get("web") and data["web"].get("results"):
             display_count = self._get_result_count_for_display(search_type)
             web_results = self._format_web_results(data["web"]["results"], display_count)
             if web_results:
-                dedicated_content = "\n\n".join(results)
+                dedicated_content = "\n\n".join(scraped_contents_dict.values())
                 dedicated_chars = len(dedicated_content)
                 max_length = self._get_max_content_length(search_type)
                 remaining_budget = max_length - dedicated_chars
@@ -302,15 +365,30 @@ class SearchService:
                         summaries_text = summaries_text[:last_period + 1]
 
                 app_logger.info(f"Appending additional summaries {len(summaries_text)} chars")
-                results.append(summaries_text)
 
-        if results:
-            combined_results = "\n\n".join(results)
-            final_source = ", ".join(source_urls) if source_urls else source_url
-            app_logger.info(f"Injecting {len(combined_results)} chars total to LLM ({len(results)} content sections)")
-            return combined_results, final_source
+        # Combine all content and save to cache
+        if scraped_contents_dict or infobox_content or summaries_text:
+            if infobox_content:
+                scraped_contents_dict["_infobox"] = infobox_content
+
+            # Build results for return
+            results_list = list(scraped_contents_dict.values())
+            if summaries_text:
+                results_list.append(summaries_text)
+
+            combined_results = "\n\n".join(results_list)
+            final_source = ", ".join([url for url in scraped_contents_dict.keys() if not url.startswith("_")]) if scraped_contents_dict else source_url
+
+            num_sections = len(scraped_contents_dict) + (1 if summaries_text else 0)
+            app_logger.info(f"Injecting {len(combined_results)} chars total to LLM ({num_sections} content sections)")
+
+            # Cache the results
+            cache = get_search_cache()
+            search_id = cache.set(search_type, query, scraped_contents_dict, summaries_text)
+
+            return combined_results, final_source, search_id
         else:
-            return "No results found.", None
+            return "No results found.", None, None
 
     def _select_best_result(self, results: List[dict], search_type: str) -> Optional[dict]:
         """

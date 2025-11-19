@@ -46,7 +46,7 @@ EXAMPLES (NO explanations. NO other text):
     REDDIT: RTX 5080 opinions
     GOOGLE: latest news on apple stock
 
-Otherwise, If you know the answer and used did not request recency, just answer it conversationally."""
+Otherwise, If you know the answer and user did not request recency, just answer it conversationally."""
 
 # System prompt for extracting search query when model mentions knowledge cutoff
 SEARCH_QUERY_EXTRACTION_PROMPT = """You are a search query generator. Today's date: {current_date}

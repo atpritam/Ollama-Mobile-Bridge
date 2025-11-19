@@ -75,7 +75,7 @@ class ChatService:
         return False
 
     @staticmethod
-    async def execute_search(context: ChatContext, search_type: str, search_query: str) -> tuple[str, str]:
+    async def execute_search(context: ChatContext, search_type: str, search_query: str) -> tuple[str, str, str]:
         """Execute search based on type."""
         search_service = SearchService(context)
 
@@ -156,14 +156,15 @@ class ChatService:
         else:
             app_logger.info(f"Extraction successful: {search_type} - '{search_query}'")
 
-        search_results, source_url = await ChatService.execute_search(context, search_type, search_query)
+        search_results, source_url, search_id = await ChatService.execute_search(context, search_type, search_query)
 
         return SearchResult(
             performed=True,
             search_type=search_type,
             search_query=search_query,
             search_results=search_results,
-            source_url=source_url
+            source_url=source_url,
+            search_id=search_id
         )
 
     @staticmethod
@@ -239,7 +240,7 @@ class ChatService:
 
         app_logger.info(f"Search triggered: {search_type} - '{search_query}'")
 
-        search_results, source_url = await ChatService.execute_search(context, search_type, search_query)
+        search_results, source_url, search_id = await ChatService.execute_search(context, search_type, search_query)
         app_logger.debug(f"Search results: {search_results[:200]}")
 
         return SearchResult(
@@ -247,7 +248,8 @@ class ChatService:
             search_type=search_type,
             search_query=search_query,
             search_results=search_results,
-            source_url=source_url
+            source_url=source_url,
+            search_id=search_id
         )
 
     @staticmethod
@@ -496,5 +498,8 @@ class ChatService:
 
             if search_result.source_url:
                 metadata["source"] = search_result.source_url
+
+            if search_result.search_id:
+                metadata["search_id"] = search_result.search_id
 
         return metadata

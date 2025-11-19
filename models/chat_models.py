@@ -50,6 +50,7 @@ class SearchResult:
     search_query: Optional[str] = None
     search_results: Optional[str] = None
     source_url: Optional[str] = None
+    search_id: Optional[int] = None
 
 
 class FlowAction(Enum):

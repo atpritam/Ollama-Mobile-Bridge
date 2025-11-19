@@ -62,6 +62,12 @@ class Config:
     # Minimum characters for additional summaries
     MIN_SUMMARY_CHARS: int = 2500
 
+    # Cache Query Similarity Settings
+    CACHE_SIMILARITY_THRESHOLD: float = 0.75
+    CACHE_SIMHASH_DISTANCE: int = 10
+    CACHE_USE_SYNONYMS: bool = True
+    CACHE_MAX_SYNONYMS: int = 10
+
     @classmethod
     def extract_model_param_size(cls, model_name: str) -> float | None:
         """Extract parameter size from model name."""
