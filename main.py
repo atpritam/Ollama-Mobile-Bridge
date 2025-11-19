@@ -2,12 +2,20 @@
 Ollama Mobile Bridge - FastAPI application for chatting with local LLMs with web search integration.
 """
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from config import Config
 from routes import chat, models_route
 from auth import APIKeyMiddleware
+from utils.http_client import HTTPClientManager
 
-app = FastAPI(title=Config.APP_TITLE)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager for startup and shutdown events."""
+    yield
+    await HTTPClientManager.close_all()
+
+app = FastAPI(title=Config.APP_TITLE, lifespan=lifespan)
 app.add_middleware(APIKeyMiddleware)
 
 #root endpoint

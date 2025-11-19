@@ -5,7 +5,7 @@ Optimized for LLM consumption by removing navigation, ads, and formatting noise.
 import re
 from typing import Optional
 from bs4 import BeautifulSoup, Comment
-
+from utils.logger import app_logger
 
 class HTMLParser:
     """HTML parser for extracting clean text content from web pages."""
@@ -119,7 +119,7 @@ class HTMLParser:
             return result
 
         except Exception as e:
-            print(f"  Wikipedia extraction error: {e}")
+            app_logger.debug(f"  Wikipedia extraction error: {e}")
             return ""
 
     @staticmethod
@@ -201,7 +201,7 @@ class HTMLParser:
 
             # If no structured extraction worked, fall back to generic extraction
             if len(content_parts) <= 1:
-                print("  Reddit: Structured extraction failed, using generic fallback")
+                app_logger.debug("  Reddit: Structured extraction failed, using generic fallback")
                 paragraphs = soup.find_all('p')[:15]
                 for para in paragraphs:
                     para_text = para.get_text(separator=' ', strip=True)
@@ -213,11 +213,11 @@ class HTMLParser:
             if len(result) > max_length:
                 result = HTMLParser._truncate_at_sentence(result, max_length)
 
-            print(f"  Reddit extraction: Found {len(content_parts)} content parts, {len(result)} chars total")
+            app_logger.debug(f"  Reddit extraction: Found {len(content_parts)} content parts, {len(result)} chars total")
             return result
 
         except Exception as e:
-            print(f"  Reddit extraction error: {e}")
+            app_logger.debug(f"  Reddit extraction error: {e}")
             return ""
 
     @staticmethod
@@ -287,7 +287,7 @@ class HTMLParser:
             return text
 
         except Exception as e:
-            print(f"  HTML extraction error: {e}")
+            app_logger.debug(f"  HTML extraction error: {e}")
             return ""
 
     @staticmethod

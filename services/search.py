@@ -9,6 +9,7 @@ from config import Config
 from utils.constants import SearchType
 from utils.html_parser import HTMLParser
 from utils.logger import app_logger
+from utils.http_client import HTTPClientManager
 
 if TYPE_CHECKING:
     from routes.chat import ChatContext
@@ -84,37 +85,31 @@ class SearchService:
             return f"Search query: '{query}'\nSearch API key not configured. Cannot perform search.", None
 
         try:
-            # Client configured with security limits
-            limits = httpx.Limits(max_connections=Config.MAX_CONCURRENT_SCRAPES)
-            async with httpx.AsyncClient(
-                timeout=Config.SEARCH_TIMEOUT,
-                follow_redirects=True,
-                max_redirects=Config.MAX_REDIRECTS,
-                limits=limits
-            ) as client:
-                # type-specific search parameters
-                params = self._get_search_params(search_type, query)
+            client = HTTPClientManager.get_search_client()
 
-                # Get search results from Brave
-                response = await client.get(
-                    Config.BRAVE_SEARCH_URL,
-                    headers={
-                        "Accept": "application/json",
-                        "Accept-Encoding": "gzip",
-                        "X-Subscription-Token": Config.BRAVE_SEARCH_API_KEY
-                    },
-                    params=params
-                )
+            # type-specific search parameters
+            params = self._get_search_params(search_type, query)
 
-                if response.status_code == 200:
-                    data = response.json()
-                    return await self._process_search_results(data, client, search_type)
-                elif response.status_code == 401:
-                    return f"Search query: '{query}'\nInvalid API key. Please check your BRAVE_SEARCH_API_KEY.", None
-                elif response.status_code == 429:
-                    return f"Search query: '{query}'\nAPI rate limit exceeded. Please try again later.", None
-                else:
-                    return f"Search query: '{query}'\nSearch API error (status {response.status_code}).", None
+            # Get search results from Brave
+            response = await client.get(
+                Config.BRAVE_SEARCH_URL,
+                headers={
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip",
+                    "X-Subscription-Token": Config.BRAVE_SEARCH_API_KEY
+                },
+                params=params
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                return await self._process_search_results(data, search_type)
+            elif response.status_code == 401:
+                return f"Search query: '{query}'\nInvalid API key. Please check your BRAVE_SEARCH_API_KEY.", None
+            elif response.status_code == 429:
+                return f"Search query: '{query}'\nAPI rate limit exceeded. Please try again later.", None
+            else:
+                return f"Search query: '{query}'\nSearch API error (status {response.status_code}).", None
 
         except httpx.TimeoutException as e:
             app_logger.error(f"Search timed out: {str(e)}")
@@ -126,18 +121,19 @@ class SearchService:
             app_logger.error(f"Unexpected search error: {str(e)}")
             return f"Search query: '{query}'\nUnexpected error during search.", None
 
-    async def _process_search_results(self, data: dict, client: httpx.AsyncClient, search_type: str) -> Tuple[str, Optional[str]]:
+    async def _process_search_results(self, data: dict, search_type: str) -> Tuple[str, Optional[str]]:
         """
         Process search results and scrape content with type-specific handling.
 
         Args:
             data: Search API response data
-            client: HTTP client for scraping
             search_type: Type of search to optimize result processing
 
         Returns:
             Tuple of (processed_results, source_url)
         """
+        client = HTTPClientManager.get_general_client()
+
         results = []
         source_url = None
         source_urls = []
@@ -230,38 +226,62 @@ class SearchService:
                 app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Wikipedia articles in parallel")
 
             else:
-                # Google: Sequential scraping with fallback to next URLs if first returns empty content
+                # Google: Parallel scraping with smart result selection and fallback
+                max_total_attempts = min(len(web_results), scrape_count_target * 3)
                 scraped_count = 0
-                attempted_count = 0
-                max_attempts = min(len(web_results), scrape_count_target * 3)
+                urls_tried = 0
+                batch_size = scrape_count_target * 2
 
-                for idx, result in enumerate(web_results[:max_attempts]):
+                while scraped_count < scrape_count_target and urls_tried < max_total_attempts:
+                    batch_start = urls_tried
+                    batch_end = min(urls_tried + batch_size, max_total_attempts)
+                    batch_results = web_results[batch_start:batch_end]
+
+                    if not batch_results:
+                        break
+
+                    scrape_tasks = []
+                    task_urls = []
+                    for idx, result in enumerate(batch_results):
+                        result_url = result.get("url")
+                        if not result_url:
+                            continue
+
+                        if source_url is None:
+                            source_url = result_url
+
+                        task = self._scrape_page(
+                            client, result_url, result.get('title', f'Result {batch_start + idx + 1}'), search_type, max_length_per_page
+                        )
+                        scrape_tasks.append(task)
+                        task_urls.append(result_url)
+
+                    if not scrape_tasks:
+                        break
+
+                    # Scrape batch in parallel
+                    scraped_contents = await asyncio.gather(*scrape_tasks, return_exceptions=True)
+                    urls_tried += len(task_urls)
+
+                    # Collect successful results from batch
+                    for idx, content in enumerate(scraped_contents):
+                        if scraped_count >= scrape_count_target:
+                            break
+
+                        if isinstance(content, Exception):
+                            app_logger.warning(f"Scraping failed for {task_urls[idx]}: {content}")
+                        elif content:
+                            results.append(content)
+                            source_urls.append(task_urls[idx])
+                            scraped_count += 1
+                        else:
+                            app_logger.warning(f"Scraping returned empty for {task_urls[idx]}")
+
+                    # If we got enough results, stop trying
                     if scraped_count >= scrape_count_target:
                         break
 
-                    result_url = result.get("url")
-                    if not result_url:
-                        continue
-
-                    attempted_count += 1
-
-                    if source_url is None:
-                        source_url = result_url
-
-                    content = await self._scrape_page(
-                        client, result_url, result.get('title', f'Result {idx+1}'), search_type, max_length_per_page
-                    )
-
-                    if isinstance(content, Exception):
-                        app_logger.warning(f"Scraping failed for {result_url}: {content}")
-                    elif content:
-                        results.append(content)
-                        source_urls.append(result_url)
-                        scraped_count += 1
-                    else:
-                        app_logger.warning(f"Scraping returned empty for {result_url}, trying next URL")
-
-                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Google pages (tried {attempted_count} URLs)")
+                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Google pages in parallel (tried {urls_tried} URLs)")
 
         # Additional search results (Brave summaries)
         if data.get("web") and data["web"].get("results"):
@@ -551,16 +571,7 @@ class SearchService:
             return None
 
     def _get_max_content_length(self, search_type: str) -> int:
-        """
-        Get maximum content length based on search type and model size from context.
-
-        Args:
-            search_type: Type of search
-
-        Returns:
-            Maximum content length in characters
-        """
-        # Access model name directly from context - no parameter chaining needed!
+        """Get maximum content length based on search type and model size from context."""
         return Config.get_max_html_text_length(self.context.model_name)
 
     def _get_scrape_count(self, search_type: str) -> int:

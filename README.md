@@ -12,13 +12,13 @@ Model-agnostic architecture, supports all models available through Ollama ([See 
 - **Context Management**: Automatically manages the LLM's context window, truncating conversation history to prevent overflow while dynamically making space for incoming search results.
 - **User Memory & Personalization**: Allows for personalized interactions by providing the LLM with persistent user context.
 - **Secure & Asynchronous**: Built on FastAPI for high-performance async operations and secured with an effective `API key middleware`.
-- **Concurrent web scraping**: Parallel async fetching with type-specific strategies and sequential fallback when fetch returns empty content.
+- **Concurrent web scraping**: Parallel async fetching with type-specific strategies for all search types with smart fallback to additional URLs when content is empty.
 - **Model-Adaptive**: Automatically detects model size and adjusts search depth, content limits, and reasoning strategies accordingly.
 
 ## Tech Stack
 
   **LLM & AI:**
-  - LLM Orchestration (Ollama)
+  - LLM (Ollama Local & Cloud models)
   - RAG (Retrieval-Augmented Generation)
   - Agentic AI (autonomous tool selection & self-healing)
 
@@ -28,8 +28,8 @@ Model-agnostic architecture, supports all models available through Ollama ([See 
   - Jina Reader API (JavaScript-rendered content fallback)
 
   **Backend:**
-  - FastAPI (async Python web framework)
   - Server-Sent Events (SSE streaming)
+  - Httpx connection pooling
   - Pydantic (data validation)
   - Asyncio (concurrent operations)
 
