@@ -98,8 +98,8 @@ class Patterns:
     KNOWLEDGE_CUTOFF_PATTERNS = [
         r"knowledge cutoff", r"knowledge cut-off", r"don't have information on.*after",
         r"don't have.*up-to-date", r"can't provide.*current", r"information may be outdated",
-        r"don't know.*after", r"real-time access", r"No specific", r"no such thing",
-        r"couldn't find", r"not officially", r"not aware of", r"No official",
-        r"available yet", r"not aware of.*event", r"don't have information",
-        r"occurred after my", r"my training data", r"don't have.*recent"
+        r"don't know.*after", r"real-time access", r"No specific", r"no such thing", r"check online",
+        r"couldn't find", r"not officially", r"not aware of", r"No official", r"i don't know",
+        r"available yet", r"not aware of.*event", r"don't have information", r"checking out online",
+        r"occurred after my", r"my training data", r"don't have.*recent", r"real-time information",
     ]

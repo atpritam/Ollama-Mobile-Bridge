@@ -3,7 +3,7 @@ Text similarity utilities for fuzzy cache key matching.
 Combines multiple similarity metrics to identify semantically similar queries.
 """
 import re
-from typing import Set, List
+from typing import Set, List, Optional, Dict
 import Levenshtein
 import jellyfish
 import wn
@@ -354,7 +354,8 @@ class TextSimilarity:
         use_simhash: bool = True,
         simhash_threshold: int = 10,
         use_synonyms: bool = True,
-        max_synonyms: int = 3
+        max_synonyms: int = 3,
+        cached_simhashes: Optional[Dict[str, int]] = None
     ) -> List[tuple[str, float]]:
         """
         Find cached queries similar to the new query.
@@ -365,6 +366,9 @@ class TextSimilarity:
             threshold: Minimum similarity score (0-1) for a match
             use_simhash: Whether to use simhash for fast pre-filtering
             simhash_threshold: Maximum simhash distance for candidates
+            use_synonyms: Whether to use synonym expansion for Jaccard similarity
+            max_synonyms: Maximum synonyms per word when use_synonyms=True
+            cached_simhashes: Optional dict mapping cached queries to pre-computed simhashes
 
         Returns:
             List of (query, similarity_score) tuples, sorted by score (descending)
@@ -382,8 +386,12 @@ class TextSimilarity:
             candidates = []
 
             for cached_query in cached_queries:
-                cached_normalized = TextSimilarity.normalize_query(cached_query)
-                cached_hash = TextSimilarity.simhash(cached_normalized)
+                # Use pre-computed simhash if available, otherwise calculate
+                if cached_simhashes and cached_query in cached_simhashes:
+                    cached_hash = cached_simhashes[cached_query]
+                else:
+                    cached_normalized = TextSimilarity.normalize_query(cached_query)
+                    cached_hash = TextSimilarity.simhash(cached_normalized)
 
                 # Only consider candidates within simhash distance threshold
                 if TextSimilarity.simhash_distance(new_hash, cached_hash) <= simhash_threshold:

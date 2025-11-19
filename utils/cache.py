@@ -19,6 +19,7 @@ class CacheEntry:
     summaries: Optional[str]  # Additional search results/summaries
     expires_at: float  # Applies to all contents in this entry
     metadata: dict  # search_type, query, timestamp, sources
+    simhash: int  # Pre-computed simhash for fast similarity matching
 
 
 class SearchCache:
@@ -144,6 +145,7 @@ class SearchCache:
     ) -> Optional[Tuple[str, float, CacheEntry]]:
         """
         Find a cached query similar to the new query within the same search type.
+        Uses pre-computed simhashes from cache entries for fast filtering.
 
         Args:
             search_type: Type of search to match within
@@ -164,6 +166,12 @@ class SearchCache:
         if not type_queries:
             return None
 
+        # Build map of cached queries to their pre-computed simhashes
+        cached_simhashes = {
+            query: entry.simhash
+            for query, entry in type_queries.items()
+        }
+
         # Find similar queries using hybrid similarity + simhash + synonym expansion
         similar = TextSimilarity.find_similar_queries(
             new_query=query,
@@ -172,7 +180,8 @@ class SearchCache:
             use_simhash=True,
             simhash_threshold=self._simhash_distance,
             use_synonyms=self._use_synonyms,
-            max_synonyms=self._max_synonyms
+            max_synonyms=self._max_synonyms,
+            cached_simhashes=cached_simhashes
         )
 
         # Return best match if found
@@ -259,11 +268,16 @@ class SearchCache:
             "sources": sources
         }
 
+        # Pre-compute simhash for fast similarity matching
+        normalized_query = TextSimilarity.normalize_query(query)
+        query_simhash = TextSimilarity.simhash(normalized_query)
+
         self._cache[key] = CacheEntry(
             scraped_contents=scraped_contents or {},
             summaries=summaries,
             expires_at=expires_at,
-            metadata=metadata
+            metadata=metadata,
+            simhash=query_simhash
         )
 
         url_count = len(scraped_contents) if scraped_contents else 0

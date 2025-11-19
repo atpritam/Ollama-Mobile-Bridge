@@ -217,7 +217,10 @@ class SearchService:
                         else:
                             app_logger.warning(f"Reddit scraping returned empty for {task_urls[idx]}")
 
-                    app_logger.info(f"Scraped {scraped_count}/{len(task_urls)} Reddit threads in parallel")
+                    app_logger.info(
+                        f"Scraped {scraped_count}/{len(task_urls)} Reddit thread"
+                        + ("s in parallel" if scraped_count > 1 else "")
+                    )
 
                 total_threads = len(scraped_contents_dict)
                 app_logger.info(f"Total Reddit content: {total_threads} threads ({len(cached_url_contents)} from cache, {len(task_urls)} scraped)")
@@ -266,7 +269,10 @@ class SearchService:
                             scraped_contents_dict[task_urls[idx]] = content
                             scraped_count += 1
 
-                    app_logger.info(f"Scraped {scraped_count}/{len(task_urls)} Wikipedia articles in parallel")
+                    app_logger.info(
+                        f"Scraped {scraped_count}/{len(task_urls)} Wikipedia articles"
+                        + (" in parallel" if scraped_count > 1 else "")
+                    )
 
                 total_articles = len(scraped_contents_dict)
                 app_logger.info(f"Total Wikipedia content: {total_articles} articles ({len(cached_url_contents)} from cache, {len(task_urls)} scraped)")
@@ -276,7 +282,7 @@ class SearchService:
                 max_total_attempts = min(len(web_results), scrape_count_target * 3)
                 scraped_count = 0
                 urls_tried = 0
-                batch_size = scrape_count_target * 2
+                batch_size = scrape_count_target
 
                 # Get cache once before the loop
                 cache = get_search_cache()
@@ -344,7 +350,11 @@ class SearchService:
                         break
 
                 total_pages = len(scraped_contents_dict)
-                app_logger.info(f"Scraped {scraped_count}/{scrape_count_target} Google pages in parallel (tried {urls_tried} URLs, {total_pages} total pages)")
+                app_logger.info(
+                    f"Scraped {scraped_count}/{scrape_count_target} Google page"
+                    + ("s in parallel" if scraped_count > 1 else "")
+                    + f" (tried {urls_tried} URLs, {total_pages} total pages)"
+                )
 
         # Additional search results (Brave summaries)
         if data.get("web") and data["web"].get("results"):
