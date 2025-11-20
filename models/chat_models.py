@@ -53,10 +53,11 @@ class SearchResult:
     search_id: Optional[int] = None
 
 
-class FlowAction(Enum):
+class FlowAction(str, Enum):
     """Types of actions in the chat flow."""
     SEARCH = "search"
-    CALL_LLM = "call_llm"
+    RECALL = "recall"
+    RECALL_FAILED = "recall_failed"
     STREAM_RESPONSE = "stream_response"
     RETURN_RESPONSE = "return_response"
 
@@ -67,6 +68,7 @@ class FlowStep:
     action: FlowAction
     search_type: Optional[str] = None
     search_query: Optional[str] = None
+    recall_id: Optional[int] = None
     messages: Optional[list] = None
     response: Optional[str] = None
     search_result: Optional[SearchResult] = None

@@ -4,7 +4,7 @@ Handles search detection, query extraction, and chat flow orchestration.
 """
 import re
 from datetime import datetime
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 from urllib.parse import urlparse
 
 from models.api_models import ChatRequest
@@ -13,6 +13,7 @@ from utils.constants import (
     DEFAULT_SYSTEM_PROMPT,
     SIMPLE_SYSTEM_PROMPT,
     SEARCH_RESULT_SYSTEM_PROMPT,
+    RECALL_SYNTHESIS_PROMPT,
     SEARCH_QUERY_EXTRACTION_PROMPT,
     SearchType,
     Patterns
@@ -75,7 +76,7 @@ class ChatService:
         return False
 
     @staticmethod
-    async def execute_search(context: ChatContext, search_type: str, search_query: str) -> tuple[str, str, str]:
+    async def execute_search(context: ChatContext, search_type: str, search_query: str) -> tuple[str, Optional[str], Optional[int]]:
         """Execute search based on type."""
         search_service = SearchService(context)
 
@@ -106,6 +107,11 @@ class ChatService:
         return clean or response
 
     @staticmethod
+    def strip_search_id_tag(text: str) -> str:
+        """Remove [search_id: N] tag from text."""
+        return re.sub(Patterns.SEARCH_ID_TAG, '', text, flags=re.IGNORECASE).strip()
+
+    @staticmethod
     async def extract_search_query(context: ChatContext, original_response: str) -> SearchResult:
         """
         Use specialized prompt to extract search query from user question.
@@ -117,24 +123,11 @@ class ChatService:
             user_context = user_context
         )
 
-        extraction_messages = [
-            {"role": "system", "content": extraction_system_prompt}
-        ]
-
-        if context.request.history:
-            truncated_history, messages_included = TokenManager.truncate_history_to_fit(
-                system_prompt=extraction_system_prompt,
-                user_memory=context.user_memory or "",
-                current_prompt=context.prompt,
-                history=[{"role": msg.role, "content": msg.content} for msg in context.request.history],
-                model_name=context.model_name
-            )
-            extraction_messages.extend(truncated_history)
-
-        extraction_messages.append({
-            "role": "user",
-            "content": context.prompt
-        })
+        extraction_messages = ChatService._build_messages(
+            request=context.request,
+            system_prompt=extraction_system_prompt,
+            strip_search_ids=True
+        )
 
         call_num = context.next_call_number()
         app_logger.info(f"LLM Call #{call_num}: Extracting search query")
@@ -192,65 +185,43 @@ class ChatService:
         Prepare a messages list for LLM with system prompt and history.
         Uses intelligent token-based truncation to fit within the model's context window.
         """
-        messages = []
-
-        messages.append({"role": "system", "content": system_prompt})
-
-        # Truncate history to fit within token budget
-        if request.history:
-            truncated_history, messages_included = TokenManager.truncate_history_to_fit(
-                system_prompt=system_prompt,
-                user_memory=request.user_memory or "",
-                current_prompt=request.prompt,
-                history=[{"role": msg.role, "content": msg.content} for msg in request.history],
-                model_name=request.model
-            )
-            messages.extend(truncated_history)
-
-        messages.append({"role": "user", "content": request.prompt})
-
-        # validation
-        within_limit, tokens_used, safe_limit, model_max = TokenManager.check_context_limit(
-            messages, request.model
+        return ChatService._build_messages(
+            request=request,
+            system_prompt=system_prompt
         )
 
-        if not within_limit:
-            raise ValueError(
-                f"Context limit exceeded. "
-                f"Tokens: {tokens_used}/{safe_limit} (model max: {model_max}). "
-            )
-
-        return messages
-
     @staticmethod
-    async def detect_and_perform_search(assistant_response: str, context: ChatContext) -> SearchResult:
-        """Detect if LLM requested a search and perform it.
+    async def detect_and_recall_from_cache(assistant_response: str) -> tuple[bool, int | None, SearchResult]:
+        """Detect if LLM requested a recall and retrieve from cache."""
+        from utils.cache import get_search_cache
 
-        Args:
-            assistant_response: Response from LLM
-            context: ChatContext containing model info and other request data
+        search_id = ChatService._parse_recall_command(assistant_response)
 
-        Returns:
-            SearchResult object containing search information
-        """
-        search_type, search_query = ChatService._parse_search_command(assistant_response)
+        if not search_id:
+            return False, None, SearchResult(performed=False)
 
-        if not search_type:
-            return SearchResult(performed=False)
+        app_logger.info(f"RECALL triggered for search ID: {search_id}")
 
-        app_logger.info(f"Search triggered: {search_type} - '{search_query}'")
+        # Retrieve from cache
+        cache = get_search_cache()
+        cached_result = cache.get_by_id(search_id)
 
-        search_results, source_url, search_id = await ChatService.execute_search(context, search_type, search_query)
-        app_logger.debug(f"Search results: {search_results[:200]}")
+        if not cached_result:
+            app_logger.warning(f"RECALL failed: search ID {search_id} not found in cache")
+            return True, search_id, SearchResult(performed=False)
 
-        return SearchResult(
+        search_results, source_url, metadata = cached_result
+
+        return True, search_id, SearchResult(
             performed=True,
-            search_type=search_type,
-            search_query=search_query,
+            search_type=metadata.get("search_type"),
+            search_query=metadata.get("query"),
             search_results=search_results,
             source_url=source_url,
             search_id=search_id
         )
+
+
 
     @staticmethod
     def extract_domain(url: str) -> str | None:
@@ -269,6 +240,18 @@ class ChatService:
         return f"User Context: [{user_context}]" if user_context else ""
 
     @staticmethod
+    def _parse_recall_command(text: str) -> int | None:
+        """Parse RECALL command from text and extract search ID."""
+        recall_match = re.search(Patterns.RECALL, text, re.IGNORECASE)
+        if recall_match:
+            try:
+                search_id = int(recall_match.group(1))
+                return search_id
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
     def _parse_search_command(text: str) -> tuple[str | None, str | None]:
         """Parse search command from text and extract type and query.
 
@@ -284,16 +267,16 @@ class ChatService:
             search_type = ChatService.parse_search_type(search_type_raw)
             return search_type, search_query
 
-        # Try fallback pattern
+        # Fallback pattern for simple "SEARCH: <query>"
         fallback_match = re.search(Patterns.SEARCH_FALLBACK, text, re.IGNORECASE)
         if fallback_match:
             search_query = fallback_match.group(1).strip()
-            return SearchType.GOOGLE, search_query
+            return "NEEDS_QUERY_EXTRACTION", search_query
 
         return None, None
 
     @staticmethod
-    def _build_messages(request: ChatRequest,system_prompt: str, additional_reserve: int = 0, validate: bool = True) -> list:
+    def _build_messages(request: ChatRequest, system_prompt: str, additional_reserve: int = 0, validate: bool = True, strip_search_ids: bool = False) -> list:
         """Build messages list with system prompt, history, and user prompt.
 
         Args:
@@ -301,6 +284,7 @@ class ChatService:
             system_prompt: System prompt to use
             additional_reserve: Additional tokens to reserve for search results
             validate: Whether to validate context limits and raise on overflow
+            strip_search_ids: If True, strip [search_id: N] tags from history content (for synthesis calls)
 
         Returns:
             List of messages ready for LLM
@@ -310,11 +294,23 @@ class ChatService:
 
         # Truncate history to fit within token budget
         if request.history:
+            formatted_history = []
+            for msg in request.history:
+                content = msg.content
+
+                if strip_search_ids:
+                    content = ChatService.strip_search_id_tag(content)
+                elif msg.search_id:
+                    content = f"{content} [search_id: {msg.search_id}]"
+
+                formatted_history.append({"role": msg.role, "content": content})
+            app_logger.debug(f"Formatted history before truncation: {formatted_history}")
+
             truncated_history, messages_included = TokenManager.truncate_history_to_fit(
                 system_prompt=system_prompt,
                 user_memory=request.user_memory or "",
                 current_prompt=request.prompt,
-                history=[{"role": msg.role, "content": msg.content} for msg in request.history],
+                history=formatted_history,
                 model_name=request.model,
                 additional_reserve=additional_reserve
             )
@@ -337,9 +333,18 @@ class ChatService:
         return messages
 
     @staticmethod
-    def _prepare_search_response_messages(context: ChatContext, search_results: str) -> list:
-        """Prepare messages with search results injected into system prompt."""
-        search_system_prompt = SEARCH_RESULT_SYSTEM_PROMPT.format(
+    def _prepare_search_response_messages(context: ChatContext, search_results: str, is_recall: bool = False) -> list:
+        """Prepare messages with search results injected into system prompt.
+
+        Args:
+            context: ChatContext with request data
+            search_results: Search results to include in prompt
+            is_recall: If True, use RECALL-specific synthesis prompt
+        """
+        # Choose prompt based on whether this is a recall or new search
+        prompt_template = RECALL_SYNTHESIS_PROMPT if is_recall else SEARCH_RESULT_SYSTEM_PROMPT
+
+        search_system_prompt = prompt_template.format(
             current_date=datetime.now().strftime("%Y-%m-%d"),
             user_context=ChatService._format_user_context(context.user_memory),
             search_results=search_results
@@ -353,32 +358,41 @@ class ChatService:
             request=context.request,
             system_prompt=search_system_prompt,
             additional_reserve=search_result_tokens,
-            validate=False  # Just warn, don't throw
+            validate=False,
+            strip_search_ids=True
         )
 
     @staticmethod
-    async def _yield_search_and_response(search_result: SearchResult,context: ChatContext) -> AsyncIterator[FlowStep]:
+    async def _yield_search_and_response(search_result: SearchResult, context: ChatContext, is_recall: bool = False) -> AsyncIterator[FlowStep]:
         """
         Yield search action followed by stream response with search results.
 
         Args:
             search_result: SearchResult object with search data
             context: ChatContext with request data
+            is_recall: If True, indicates this is a RECALL operation (not a new search)
 
         Yields:
             FlowStep for search action and stream response
         """
-        # Yield search action
-        yield FlowStep(
-            action=FlowAction.SEARCH,
-            search_type=search_result.search_type,
-            search_query=search_result.search_query
-        )
+        # Yield search action (or recall action)
+        if is_recall:
+            yield FlowStep(
+                action=FlowAction.RECALL,
+                recall_id=search_result.search_id
+            )
+        else:
+            yield FlowStep(
+                action=FlowAction.SEARCH,
+                search_type=search_result.search_type,
+                search_query=search_result.search_query
+            )
 
         # Prepare final messages with search results
         final_messages = ChatService._prepare_search_response_messages(
             context,
-            search_result.search_results
+            search_result.search_results,
+            is_recall=is_recall
         )
 
         # Yield stream response action
@@ -409,14 +423,14 @@ class ChatService:
 
     @staticmethod
     async def _process_llm_response(context: ChatContext, call_num: int) -> AsyncIterator[FlowStep]:
-        """Process LLM response and handle search/cutoff detection.
+        """Process LLM response and handle search/recall/cutoff detection.
 
         Args:
             context: ChatContext with request data
             call_num: LLM call number for logging
 
         Yields:
-            FlowStep for various actions (search, response, etc.)
+            FlowStep for various actions (search, recall, response, etc.)
         """
         response = await context.client.chat(
             model=context.request.model,
@@ -425,13 +439,51 @@ class ChatService:
         assistant_response = response['message']['content']
         app_logger.debug(f"LLM Call #{call_num} response preview: {assistant_response[:100]}...")
 
-        # Check for SEARCH tag in response
-        search_result = await ChatService.detect_and_perform_search(assistant_response, context)
+        # Check for RECALL tag
+        recall_detected, recall_id, recall_result = await ChatService.detect_and_recall_from_cache(assistant_response)
 
-        if search_result.performed:
-            async for step in ChatService._handle_search_tag_detected(search_result, context):
-                yield step
-            return
+        if recall_detected:
+            if recall_result.performed:
+                async for step in ChatService._yield_search_and_response(recall_result, context, is_recall=True):
+                    yield step
+                return
+            else:
+                # RECALL failed - search ID not found
+                app_logger.warning(f"RECALL {recall_id} failed, rerouting to new search")
+                yield FlowStep(action=FlowAction.RECALL_FAILED)
+
+                # Reroute to new search flow
+                search_result = await ChatService.extract_search_query(context, assistant_response)
+                async for step in ChatService._yield_search_and_response(search_result, context):
+                    yield step
+                return
+
+        # Check for SEARCH tag
+        search_type, search_query = ChatService._parse_search_command(assistant_response)
+
+        if search_type:
+            if search_type == "NEEDS_QUERY_EXTRACTION":
+                # Simple "SEARCH: <query>" detected, reroute to search query extraction
+                app_logger.info("Simple SEARCH tag detected, rerouting to search query extraction")
+                search_result = await ChatService.extract_search_query(context, assistant_response)
+                async for step in ChatService._yield_search_and_response(search_result, context):
+                    yield step
+                return
+            else:
+                # Typed search detected, perform it directly
+                app_logger.info(f"Search triggered: {search_type} - '{search_query}'")
+                search_results, source_url, search_id = await ChatService.execute_search(context, search_type, search_query)
+                search_result = SearchResult(
+                    performed=True,
+                    search_type=search_type,
+                    search_query=search_query,
+                    search_results=search_results,
+                    source_url=source_url,
+                    search_id=search_id
+                )
+                async for step in ChatService._handle_search_tag_detected(search_result, context):
+                    yield step
+                return
 
         # Check for knowledge cutoff pattern
         if ChatService.detect_knowledge_cutoff(assistant_response):

@@ -41,7 +41,7 @@ class Config:
     }
 
     # Small model detection in b parameters (default)
-    SMALL_MODEL_THRESHOLD: float = 4.0
+    SMALL_MODEL_THRESHOLD: float = 7.0
 
     # Safety buffer: 75% model context usage
     # Better response quality

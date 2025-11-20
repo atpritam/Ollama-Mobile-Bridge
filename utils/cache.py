@@ -430,7 +430,7 @@ class SearchCache:
         )
         return search_id
 
-    def get_by_id(self, search_id: str) -> Optional[Tuple[str, Optional[str], dict]]:
+    def get_by_id(self, search_id: int) -> Optional[Tuple[str, Optional[str], dict]]:
         """Get cached search by search ID."""
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -482,7 +482,6 @@ class SearchCache:
 
 # Global cache instance
 _search_cache = SearchCache(max_size=500)
-
 
 def get_search_cache() -> SearchCache:
     """Get the global search cache instance."""

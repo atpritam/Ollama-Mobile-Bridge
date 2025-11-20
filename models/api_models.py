@@ -9,6 +9,7 @@ class Message(BaseModel):
     """Chat message model."""
     role: str  # "user" or "assistant"
     content: str
+    search_id: Optional[int] = None
 
 
 class ChatRequest(BaseModel):

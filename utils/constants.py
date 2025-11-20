@@ -19,34 +19,37 @@ REDDIT: <topic>
 GOOGLE: <query>
 WIKI: <query>
 
+Prefer REDDIT only for opinions, reviews and discussions.
+
+Previous assistant responses that performed searches include [search_id: N] at the end.
+When user asks for more details or references a previous search result, use RECALL to retrieve that search:
+RECALL: <search_id>
+
 EXAMPLES (NO explanations. NO other text):
-    WEATHER: Boston
-    REDDIT: RTX 5080 opinions (prefer REDDIT for opinions, reviews, discussions)
-    GOOGLE: latest news on apple stock
+WEATHER: Boston
+REDDIT: RTX 5080 opinions
+RECALL: 5
 
-Either respond with the search query or your known answer, not both.
-
-WRONG:
-    Models are now creating increasingly sophisticated video and audio content. I'm going to perform a Google search. GOOGLE: latest AI developments"""
+Either respond with the search query / recall format or your known answer, not both."""
 
 # Simplified system prompt for small models
-SIMPLE_SYSTEM_PROMPT = """You are a chat conversational assistant. Today's date: {current_date}
+SIMPLE_SYSTEM_PROMPT = """You are a chat assistant. Today's date: {current_date}
 {user_context}
-Given today's date, If you don't know something or user wants 'recent / current' info, respond with:
+Given the date, If you don't know something or user wants 'recent/current' info, respond with:
 WEATHER: <city>
-REDDIT: <topic>
-GOOGLE: <query>
-WIKIPEDIA: <query>
+SEARCH: <query>
 
-Prefer REDDIT for opinions, reviews and discussions.
-Prefer WEATHER for current weather requests.
+Previous assistant responses that performed searches include [search_id: N] at the end.
+When user references a previous search result, respond with:
+RECALL: <search_id>
+This retrieves the same search content used for that answer.
 
 EXAMPLES (NO explanations. NO other text):
-    WEATHER: Boston
-    REDDIT: RTX 5080 opinions
-    GOOGLE: latest news on apple stock
+WEATHER: Boston
+SEARCH: RTX 5080 opinions
+RECALL: 5
 
-Otherwise, If you know the answer and user did not request recency, just answer it conversationally."""
+Otherwise, If you know the answer truthfully, just answer it conversationally."""
 
 # System prompt for extracting search query when model mentions knowledge cutoff
 SEARCH_QUERY_EXTRACTION_PROMPT = """You are a search query generator. Today's date: {current_date}
@@ -58,7 +61,7 @@ REDDIT: <topic>
 WIKIPEDIA: <query>
 GOOGLE: <query>
 
-Prefer REDDIT for community/People opinions, reviews and discussions.
+Prefer REDDIT only for community/People opinions, reviews and discussions.
 Prefer WEATHER for current weather requests.
 
 EXAMPLES (NO explanations. NO other text):
@@ -81,6 +84,21 @@ INSTRUCTIONS:
 - Synthesize the information above to provide a natural answer.
 - Keep responses concise and conversational, which users can read under a minute. MAXIMUM 400 words."""
 
+# System prompt for RECALL synthesis (when user asks follow-up about previous search)
+RECALL_SYNTHESIS_PROMPT = """You are a conversational chat assistant.
+Today's Date: {current_date}
+{user_context}
+The user is asking a follow-up question about a previous search result.
+Previously retrieved data:
+---
+{search_results}
+---
+
+INSTRUCTIONS:
+- Answer the user's follow-up question using the information above.
+- If the user's question cannot be answered from this data, acknowledge that politely.
+- Keep responses concise and conversational. MAXIMUM 300 words."""
+
 
 # Search type constants
 class SearchType:
@@ -93,11 +111,14 @@ class Patterns:
     """Regular expression patterns for search detection."""
     SEARCH_WITH_TYPE = r'(WEATHER|GOOGLE|REDDIT|WIKI|WIKIPEDIA):\s*(.+?)(?:\n|$)'
     SEARCH_FALLBACK = r'SEARCH:\s*(.+?)(?:\n|$)'
-    SEARCH_TAG_CLEANUP = r'(WEATHER|GOOGLE|REDDIT|WIKI|WIKIPEDIA|SEARCH):\s*.+?(?:\n|$)'
+    RECALL = r'RECALL:\s*(\d+)(?:\n|$)'
+    SEARCH_TAG_CLEANUP = r'(WEATHER|GOOGLE|REDDIT|WIKI|WIKIPEDIA|SEARCH|RECALL):\s*.+?(?:\n|$)'
+    SEARCH_ID_TAG = r'^\s*\[search_id:\s*\d+\]\s*|\s*\[search_id:\s*\d+\]\s*$'
+
 
     KNOWLEDGE_CUTOFF_PATTERNS = [
-        r"knowledge cutoff", r"knowledge cut-off", r"don't have information on.*after",
-        r"don't have.*up-to-date", r"can't provide.*current", r"information may be outdated",
+        r"knowledge cutoff", r"knowledge cut-off", r"don't have information on.*after", f"don't have access",
+        r"don't have.*up-to-date", r"can't provide.*current", r"information may be outdated", r"(No additional information)",
         r"don't know.*after", r"real-time access", r"No specific", r"no such thing", r"check online",
         r"couldn't find", r"not officially", r"not aware of", r"No official", r"i don't know",
         r"available yet", r"not aware of.*event", r"don't have information", r"checking out online",

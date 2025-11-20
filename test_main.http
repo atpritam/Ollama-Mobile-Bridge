@@ -109,3 +109,39 @@ X-API-Key: {{api_key}}
 }
 
 ###
+
+# Test RECALL functionality - Step 1: Perform a search to get a search_id
+POST http://127.0.0.1:8000/chat
+Content-Type: application/json
+X-API-Key: {{api_key}}
+
+{
+  "model": "llama3.2:3b-instruct-q4_K_M",
+  "prompt": "What's on the news about Cloudflare outage?"
+}
+
+###
+
+# Test RECALL functionality - Step 2: keep search_id in history as reference
+# Replace with actual search_id
+POST http://127.0.0.1:8000/chat/stream
+Content-Type: application/json
+X-API-Key: {{api_key}}
+
+{
+  "model": "gemma3:4b-it-qat",
+  "prompt": "did the source mention anything else?",
+  "history": [
+    {
+      "role": "user",
+      "content": "What's on the news about Cloudflare outage?"
+    },
+    {
+      "role": "assistant",
+      "content": "There's been a big deal in the tech world lately - Cloudflare had a massive outage that affected millions of websites and services across the internet. It happened on November 18, 2025, and started causing error messages to flash up on websites around 11:48 am London time.",
+      "search_id": 18
+    }
+  ]
+}
+
+###
