@@ -1,19 +1,20 @@
 # Ollama Mobile Bridge: Intelligent Agentic LLM Orchestration
 
-FastAPI backend that transforms local LLMs into intelligent agents with real-time web access, autonomous search routing, and sophisticated context management. Built to maximize the capabilities of models of any size through dynamic resource allocation and multi-step reasoning.
+FastAPI backend that transforms local LLMs into fully capable agentic systems with real-time web access, autonomous search routing, and advanced context management. Designed to maximize the capabilities of models of any size through dynamic strategy selection and multi-step reasoning.
 
-Model-agnostic architecture, supports all models available through Ollama ([See Models](https://ollama.ai/models)). System automatically adjusts reasoning and strategies based on model capability (3B vs 70B).
+The architecture is fully model-agnostic, supporting all Ollama-compatible models ([See List](https://ollama.ai/models)).
+The system automatically adjusts reasoning depth and tool usage based on the model’s capability (e.g., 3B vs 70B).
 
 ## Core Features
 
-- **RAG Pipeline**: Multi-step reasoning process, detects if query needs fresh data, generates its own search queries, and synthesizes information for a final answer.
-- **Tool Calling**: Detects user intent and routes to specialized tools (Google, Reddit, Wikipedia, Weather).
+- **RAG Pipeline**: Performs multi-step reasoning, determines if fresh data is needed, generates search queries, performs external search or internal recall, and synthesizes results into a final answer.
+- **Tool Calling**: Detects user intent and routes to specialized tools (Google, Reddit, Wikipedia, Weather, Recall).
+- **Concurrent web scraping**: High-performance parallel fetching with type-specific extraction and fallback URLs when content is empty.
+- **Smart Caching**: Multi-level caching for queries and URLs using Jaccard/Cosine similarity, SimHash, and WordNet synonyms to avoid redundant searches and scraping.
+- **Memory & Recall**: The agent can reference its own past search results within a conversation, enabling more coherent and context-aware follow-up responses.
+- **Context Management**: Automatically manages the model’s context window, truncating history while dynamically making space for incoming search results.
+- **User Memory**: Allows for personalized interactions by providing the LLM with persistent user context.
 - **Streaming API**: Delivers responses using Server-Sent Events (SSE), providing real-time status updates and token-by-token streaming.
-- **Context Management**: Automatically manages the LLM's context window, truncating conversation history to prevent overflow while dynamically making space for incoming search results.
-- **User Memory & Personalization**: Allows for personalized interactions by providing the LLM with persistent user context.
-- **Secure & Asynchronous**: Built on FastAPI for high-performance async operations and secured with an effective `API key middleware`.
-- **Concurrent web scraping**: Parallel async fetching with type-specific strategies for all search types with smart fallback to additional URLs when content is empty.
-- **Smart Caching**: Multi-level query and URL content caching with intelligent similarity detection using Jaccard/Cosine, SimHash, and WordNet synonyms to avoid redundant searches and web scraping.
 
 ## Tech Stack
 
@@ -46,6 +47,7 @@ Ollama-Mobile-Bridge/
 ├── main.py                      # Application entry point
 ├── auth.py                      # Authentication middleware
 ├── config.py                    # Dynamic configuration & model detection
+├── tests/                       # Unit and integration tests
 ├── models/
 │   ├── api_models.py            # Pydantic API request/response models
 │   └── chat_models.py           # Internal data structures
@@ -81,17 +83,23 @@ Ollama-Mobile-Bridge/
     cd Ollama-Mobile-Bridge
     ```
 
-2.  **Install dependencies**:
+2.  **Activate virtual environment**:
+    ```bash
+    python3.14 -m venv .venv    # use appropriate Python version
+    source .venv/bin/activate   # Activate virtual environment
+    ```
+
+3.  **Install dependencies**:
     ```bash
     pip install -r requirements.txt
     ```
 
-3.  **Set up environment variables**:
+4.  **Set up environment variables**:
     ```bash
     cp .env.example .env
     ```
 
-4.  **Configure API keys** in `.env`:
+5.  **Configure API keys** in `.env`:
     ```env
     BRAVE_SEARCH_API_KEY=your_brave_search_key
     OPENWEATHER_API_KEY=your_openweather_api_key
@@ -105,7 +113,8 @@ Ollama-Mobile-Bridge/
 
 1.  **Ensure Ollama is running**:
     ```bash
-    ollama serve
+    # Install Ollama: https://ollama.com/download
+    ollama serve 
     ```
 
 2.  **Start the server**:
@@ -114,6 +123,11 @@ Ollama-Mobile-Bridge/
     ```
 
 3.  The server will start on `http://0.0.0.0:8000`.
+
+## Run Tests
+```bash
+ python -m pytest # 85 tests
+```
 
 ## API Endpoints
 

@@ -115,12 +115,12 @@ class Patterns:
     SEARCH_TAG_CLEANUP = r'(WEATHER|GOOGLE|REDDIT|WIKI|WIKIPEDIA|SEARCH|RECALL):\s*.+?(?:\n|$)'
     SEARCH_ID_TAG = r'^\s*\[search_id:\s*\d+\]\s*|\s*\[search_id:\s*\d+\]\s*$'
 
-
     KNOWLEDGE_CUTOFF_PATTERNS = [
-        r"knowledge cutoff", r"knowledge cut-off", r"don't have information on.*after", f"don't have access",
-        r"don't have.*up-to-date", r"can't provide.*current", r"information may be outdated", r"(No additional information)",
-        r"don't know.*after", r"real-time access", r"No specific", r"no such thing", r"check online",
-        r"couldn't find", r"not officially", r"not aware of", r"No official", r"i don't know",
-        r"available yet", r"not aware of.*event", r"don't have information", r"checking out online",
-        r"occurred after my", r"my training data", r"don't have.*recent", r"real-time information",
+        r"knowledge cutoff", r"knowledge cut-off", r"don't have information(?: on.*after)?",
+        r"don't have access", r"don't have.*(?:up-to-date|recent)", r"can't provide.*current",
+        r"information may be outdated", r"(No additional information)", r"don't know.*after",
+        r"real-time access", r"No specific", r"no such thing", r"check(?:ing out)? online",
+        r"couldn't find", r"not officially", r"not aware of(?:.*event)?", r"No official",
+        r"i don't know", r"as of my last update in 202\d", r"available yet", r"real-time information",
+        r"don't have information", r"occurred after my", r"my training data",
     ]

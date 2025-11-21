@@ -13,7 +13,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     Checks X-API-Key header against configured API_KEY.
     """
 
-    EXCLUDED_PATHS = {"/", "/docs", "/openapi.json", "/redoc"}
+    EXCLUDED_PATHS = {"/docs", "/openapi.json", "/redoc"}
     API_KEY: str = os.getenv("API_KEY", "")
 
     async def dispatch(self, request: Request, call_next):

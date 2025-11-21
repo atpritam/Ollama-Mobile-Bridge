@@ -6,6 +6,7 @@ from typing import Tuple, Optional
 from config import Config
 from utils.logger import app_logger
 from utils.http_client import HTTPClientManager
+from utils.cache import get_search_cache
 
 
 class WeatherService:
@@ -24,8 +25,6 @@ class WeatherService:
         Returns:
             Tuple of (weather_info, source_url, search_id)
         """
-        from utils.cache import get_search_cache
-
         # Check cache first
         cache = get_search_cache()
         cached = cache.get("weather", city)
@@ -49,7 +48,7 @@ class WeatherService:
                 )
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = await response.json()
                     weather_info = WeatherService._format_weather_data(data)
                     app_logger.info(f"Weather data retrieved for {city}")
 
