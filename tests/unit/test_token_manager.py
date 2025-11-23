@@ -91,7 +91,7 @@ def test_truncate_history_to_fit_keeps_newest_messages(mock_token_manager_config
         current_prompt="What is happening?",
         history=history,
         model_name="test-model",
-        additional_reserve=689, # This leaves just enough room for one message (~294 tokens)
+        additional_reserve=689,
     )
 
     assert included_count == 1

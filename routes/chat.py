@@ -96,7 +96,7 @@ async def chat_stream(request: ChatRequest):
     """
     Streaming chat endpoint with real-time status updates.
     Returns Server-Sent Events (SSE) stream with:
-    - status updates (thinking, searching, scraping, generating)
+    - status updates (thinking, searching, recalling, generating)
     - token-by-token response streaming
     - final response metadata
     """

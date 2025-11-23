@@ -1,5 +1,6 @@
 """
-Ollama Mobile Bridge - FastAPI application for chatting with local LLMs with web search integration.
+Ollama Mobile Bridge - FastAPI application for chatting with local LLMs.
+Featuring agentic System with real-time web access, autonomous search routing, cache retrieval and advanced context management.
 """
 from fastapi import FastAPI
 from contextlib import asynccontextmanager

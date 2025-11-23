@@ -1,6 +1,6 @@
 # Ollama Mobile Bridge: Intelligent Agentic LLM Orchestration
 
-FastAPI backend that transforms local LLMs into fully capable agentic systems with real-time web access, autonomous search routing, and advanced context management. Designed to maximize the capabilities of models of any size through dynamic strategy selection and multi-step reasoning.
+FastAPI backend that transforms local LLMs into capable agentic systems with real-time web access, autonomous search routing, and advanced context management. Designed to maximize the capabilities of models of any size through dynamic strategy selection and multi-step reasoning.
 
 The architecture is fully model-agnostic, supporting all Ollama-compatible models ([See List](https://ollama.ai/models)).
 The system automatically adjusts reasoning depth and tool usage based on the model’s capability (e.g., 3B vs 70B).
@@ -41,6 +41,8 @@ The system automatically adjusts reasoning depth and tool usage based on the mod
   - Error handling & fallback mechanisms
 
 ## Architecture
+
+The core logic resides in `services/chat_service.py`, which orchestrates a flow of deciding whether to search the web, recall past information from a smart cache, or answer from the model's own knowledge. Key supporting components include a robust web scraper (`services/search.py`), an intelligent, similarity-aware persistent cache (`utils/cache.py`), and a critical context window manager (`utils/token_manager.py`).
 
 ```
 Ollama-Mobile-Bridge/

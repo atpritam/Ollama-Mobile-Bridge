@@ -3,7 +3,6 @@ import httpx
 import json
 from unittest.mock import patch, AsyncMock
 
-from services.search import SearchService
 from utils.token_manager import TokenManager
 from tests.helpers import assert_sse_event
 from tests.fixtures.responses import MOCK_BRAVE_SEARCH_API_RESPONSE, MOCK_WEBPAGE_CONTENT

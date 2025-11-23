@@ -43,7 +43,9 @@ async def test_perform_search_when_cache_misses_calls_api(configured_search_serv
     service, mock_cache = configured_search_service
     mock_cache.get.return_value = None
     
-    mock_http_client.get.return_value = AsyncMock(status_code=200, json=AsyncMock(return_value=mock_search_response))
+    mock_response = AsyncMock(status_code=200)
+    mock_response.json = Mock(return_value=mock_search_response)
+    mock_http_client.get.return_value = mock_response
 
     with patch("services.search.HTTPClientManager.get_search_client", return_value=mock_http_client), \
          patch.object(service, "_process_search_results", new_callable=AsyncMock) as mock_process:
@@ -74,12 +76,9 @@ async def test_perform_search_handles_api_errors(
 
     if exception:
         mock_http_client.get.side_effect = exception
-    if exception:
-        mock_http_client.get.side_effect = exception
     else:
-        # Create a synchronous mock response object
-        mock_response = Mock(status_code=status_code)
-        mock_response.json.return_value = {} # Configure its synchronous json method
+        mock_response = AsyncMock(status_code=status_code)
+        mock_response.json = Mock(return_value={})
         mock_http_client.get.return_value = mock_response
 
     with patch("services.search.HTTPClientManager.get_search_client", return_value=mock_http_client):

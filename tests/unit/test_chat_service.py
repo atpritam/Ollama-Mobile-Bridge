@@ -1,9 +1,8 @@
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 
 from config import Config
-from models.api_models import ChatRequest, Message
-from models.chat_models import ChatContext, SearchResult, FlowAction, FlowStep
+from models.chat_models import SearchResult, FlowAction, FlowStep
 from services.chat_service import ChatService
 from utils.constants import SearchType
 from utils.token_manager import TokenManager

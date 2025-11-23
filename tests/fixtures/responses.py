@@ -1,7 +1,3 @@
-# tests/fixtures/responses.py
-DEFAULT_SEARCH_RESPONSE = {
-    "web": {"results": [{"title": "Result 1", "url": "https://example.com/1", "description": "Description 1"}]}
-}
 
 DEFAULT_WEATHER_RESPONSE = {
     "weather": [{"main": "Clear", "description": "clear sky"}],
@@ -12,7 +8,7 @@ DEFAULT_WEATHER_RESPONSE = {
     "id": 12345,
 }
 
-# Brave Search API response
+
 MOCK_BRAVE_SEARCH_API_RESPONSE = {
     "web": {
         "results": [

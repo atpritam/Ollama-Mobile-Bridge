@@ -1,6 +1,5 @@
-import pytest
-from unittest.mock import patch, AsyncMock
 
+from unittest.mock import patch, AsyncMock
 from models.chat_models import FlowAction, FlowStep, SearchResult
 from tests.helpers import assert_sse_event
 
