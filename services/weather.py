@@ -48,7 +48,7 @@ class WeatherService:
                 )
 
                 if response.status_code == 200:
-                    data = await response.json()
+                    data = response.json()
                     weather_info = WeatherService._format_weather_data(data)
                     app_logger.info(f"Weather data retrieved for {city}")
 

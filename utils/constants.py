@@ -35,7 +35,7 @@ Either respond with the search query / recall format or your known answer, not b
 # Simplified system prompt for small models
 SIMPLE_SYSTEM_PROMPT = """You are a chat assistant. Today's date: {current_date}
 {user_context}
-Given the date, If you don't know something or user wants 'recent/current' info, respond with:
+Given the date, If you don't know something or user wants 'recent/current' info, respond with tags only:
 WEATHER: <city>
 SEARCH: <query>
 
@@ -44,7 +44,7 @@ When user references a previous search result, respond with:
 RECALL: <search_id>
 This retrieves the same search content used for that answer.
 
-EXAMPLES (NO explanations. NO other text):
+EXAMPLES (NO explanations. NO other text. TAGS only):
 WEATHER: Boston
 SEARCH: RTX 5080 opinions
 RECALL: 5
@@ -82,6 +82,7 @@ The following data was scraped from the internet just now:
 
 INSTRUCTIONS:
 - Synthesize the information above to provide a natural answer.
+- Do not mention Knowledge Cut-off.
 - Keep responses concise and conversational, which users can read under a minute. MAXIMUM 400 words."""
 
 # System prompt for RECALL synthesis (when user asks follow-up about previous search)
@@ -119,8 +120,8 @@ class Patterns:
         r"knowledge cutoff", r"knowledge cut-off", r"don't have information(?: on.*after)?",
         r"don't have access", r"don't have.*(?:up-to-date|recent)", r"can't provide.*current",
         r"information may be outdated", r"(No additional information)", r"don't know.*after",
-        r"real-time access", r"No specific", r"no such thing", r"check(?:ing out)? online",
-        r"couldn't find", r"not officially", r"not aware of(?:.*event)?", r"No official",
+        r"real-time access", r"No specific", r"no such thing", r"check(?:ing out)? online", r"SEARCH:",
+        r"couldn't find", r"not officially", r"not aware of(?:.*event)?", r"No official", r"not familiar",
         r"i don't know", r"as of my last update in 202\d", r"available yet", r"real-time information",
-        r"don't have information", r"occurred after my", r"my training data",
+        r"don't have information", r"occurred after my", r"my training data", r"couldn't find any information",
     ]

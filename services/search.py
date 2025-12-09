@@ -547,35 +547,57 @@ class SearchService:
 
             app_logger.info(f"Scraping content from: {url} (type: {search_type})")
 
-            async with client.stream(
-                'GET', url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                },
-                timeout=Config.WEB_SCRAPING_TIMEOUT,
-                follow_redirects=True
-            ) as page_response:
+            html_content = None
+            try:
+                async with client.stream(
+                    'GET', url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                        "Accept-Encoding": "gzip, deflate, br",
+                    },
+                    timeout=Config.WEB_SCRAPING_TIMEOUT,
+                    follow_redirects=True
+                ) as page_response:
 
-                if page_response.status_code != 200:
-                    app_logger.warning(f"Failed to fetch {url}: status {page_response.status_code}")
-                    return None
+                    if page_response.status_code == 200:
+                        content_type = page_response.headers.get('content-type', '').lower().split(';')[0].strip()
+                        if content_type and not any(allowed in content_type for allowed in Config.ALLOWED_CONTENT_TYPES):
+                            app_logger.warning(f"Skipping {url}: unsupported content-type '{content_type}'")
+                        else:
+                            size = 0
+                            chunks = []
+                            async for chunk in page_response.aiter_bytes():
+                                size += len(chunk)
+                                if size > Config.MAX_RESPONSE_SIZE:
+                                    app_logger.warning(f"Response from {url} exceeds size limit ({size} bytes)")
+                                    html_content = None
+                                    break
+                                chunks.append(chunk)
+                            else:
+                                html_content = b''.join(chunks).decode('utf-8', errors='ignore')
+                    else:
+                        app_logger.warning(f"Failed to fetch {url}: status {page_response.status_code}")
 
-                # Validate content-type before downloading
-                content_type = page_response.headers.get('content-type', '').lower().split(';')[0].strip()
-                if content_type and not any(allowed in content_type for allowed in Config.ALLOWED_CONTENT_TYPES):
-                    app_logger.warning(f"Skipping {url}: unsupported content-type '{content_type}'")
-                    return None
+            except (httpx.TimeoutException, httpx.RequestError) as e:
+                app_logger.warning(f"Direct scraping failed for {url}: {e}")
 
-                size = 0
-                chunks = []
-                async for chunk in page_response.aiter_bytes():
-                    size += len(chunk)
-                    if size > Config.MAX_RESPONSE_SIZE:
-                        app_logger.warning(f"Response from {url} exceeds size limit ({size} bytes)")
-                        return None
-                    chunks.append(chunk)
-
-                html_content = b''.join(chunks).decode('utf-8', errors='ignore')
+            # Fallback to Jina Reader if direct fetch failed
+            if not html_content:
+                app_logger.info(f"Direct scrape for {url} failed, falling back to Jina Reader.")
+                if max_length is None:
+                    max_length = self._get_max_content_length(search_type)
+                
+                jina_content = await self._scrape_with_jina(client, url, max_length)
+                if jina_content:
+                    app_logger.info(f"Successfully fetched {len(jina_content)} chars using Jina Reader")
+                    result = f"=== Content from: {title} ===\n"
+                    result += f"Source: {url}\n"
+                    result += jina_content
+                    return result
+                else:
+                    return None # Jina also failed
 
             if html_content:
                 if "wikipedia.org" in url:
@@ -633,7 +655,7 @@ class SearchService:
             jina_response = await client.get(
                 jina_url,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
                     "Accept": "text/plain"
                 },
                 timeout=10.0

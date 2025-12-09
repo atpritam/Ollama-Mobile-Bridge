@@ -27,6 +27,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         Returns:
             Response from next handler or error response
         """
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+            
         if request.url.path in self.EXCLUDED_PATHS:
             return await call_next(request)
 
