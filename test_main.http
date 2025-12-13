@@ -5,18 +5,18 @@
 
 ###
 # API health check
-GET http://127.0.0.1:8000/
+GET http://0.0.0.0:8000/
 Accept: application/json
 
 ###
 # List all available ollama models
-GET http://127.0.0.1:8000/list
+GET http://0.0.0.0:8000/list
 Accept: application/json
 X-API-Key: {{api_key}}
 
 ###
 # Simple Chat
-POST http://127.0.0.1:8000/chat
+POST http://0.0.0.0:8000/chat
 Content-Type: application/json
 X-API-Key: {{api_key}}
 
@@ -28,7 +28,7 @@ X-API-Key: {{api_key}}
 ###
 
 # Test chat with conversation history
-POST http://127.0.0.1:8000/chat
+POST http://0.0.0.0:8000/chat
 Content-Type: application/json
 X-API-Key: {{api_key}}
 
@@ -50,7 +50,7 @@ X-API-Key: {{api_key}}
 ###
 
 # Test Complex query
-POST http://127.0.0.1:8000/chat
+POST http://0.0.0.0:8000/chat
 Content-Type: application/json
 X-API-Key: {{api_key}}
 
@@ -62,7 +62,7 @@ X-API-Key: {{api_key}}
 ###
 
 # Test automatic search with Wikipedia
-POST http://127.0.0.1:8000/chat
+POST http://0.0.0.0:8000/chat
 Content-Type: application/json
 X-API-Key: {{api_key}}
 
@@ -74,7 +74,7 @@ X-API-Key: {{api_key}}
 ###
 
 # Test opinions search on reddit with stream response
-POST http://127.0.0.1:8000/chat/stream
+POST http://0.0.0.0:8000/chat/stream
 Content-Type: application/json
 X-API-Key: {{api_key}}
 
@@ -85,7 +85,7 @@ X-API-Key: {{api_key}}
 
 ###
 # Test 2-Call Flow
-POST http://127.0.0.1:8000/chat
+POST http://0.0.0.0:8000/chat
 Content-Type: application/json
 X-API-Key: {{api_key}}
 
@@ -98,7 +98,7 @@ X-API-Key: {{api_key}}
 ###
 
 # Test with user memory context
-POST http://127.0.0.1:8000/chat
+POST http://0.0.0.0:8000/chat/stream
 Content-Type: application/json
 X-API-Key: {{api_key}}
 
@@ -111,7 +111,7 @@ X-API-Key: {{api_key}}
 ###
 
 # Test RECALL functionality - Step 1: Perform a search to get a search_id
-POST http://127.0.0.1:8000/chat
+POST http://0.0.0.0:8000/chat
 Content-Type: application/json
 X-API-Key: {{api_key}}
 
@@ -124,7 +124,7 @@ X-API-Key: {{api_key}}
 
 # Test RECALL functionality - Step 2: keep search_id in history as reference
 # Replace with actual search_id
-POST http://127.0.0.1:8000/chat/stream
+POST http://0.0.0.0:8000/chat/stream
 Content-Type: application/json
 X-API-Key: {{api_key}}
 

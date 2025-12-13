@@ -1,12 +1,12 @@
 """
-Temporary debug route to see what the phone is sending
+Debug route to see what the phone/client is sending
 """
 from fastapi import APIRouter, Request
 from utils.logger import app_logger
 
 router = APIRouter()
 
-@router.post("/chat/stream/debug")
+@router.post("/chat/debug")
 async def chat_stream_debug(request: Request):
     """Debug endpoint to see raw request body"""
     try:

@@ -113,18 +113,64 @@ Ollama-Mobile-Bridge/
 
 ## Quick Start
 
-1.  **Ensure Ollama is running**:
-    ```bash
-    # Install Ollama: https://ollama.com/download
-    ollama serve 
-    ```
+1. **Ensure Ollama is installed and running**
 
-2.  **Start the server**:
-    ```bash
-    python main.py
-    ```
+   Install Ollama: https://ollama.com/download
 
-3.  The server will start on `http://0.0.0.0:8000`.
+   Start the Ollama service:
+
+   ```bash
+   ollama serve
+   ```
+
+   Pull a model:
+
+   ```bash
+   ollama pull llama3.2:3b
+   ```
+
+   Verify Ollama is reachable:
+
+   ```bash
+   ollama list
+   ```
+
+2. **Start the FastAPI server**
+
+   With your virtual environment activated and `.env` configured:
+
+   ```bash
+   python main.py
+   ```
+
+3. **Server address**
+
+   By default the server starts on:
+
+   - `http://0.0.0.0:8000` (binds on all interfaces)
+
+   From the same machine you can use:
+
+   - `http://127.0.0.1:8000`
+
+4. **Client-side endpoint (phone / another device)**
+
+   **Option A — Local network**
+   1. Find your machine’s LAN IP:
+      ```bash
+      hostname -I
+      ```
+   2. Use the first IP shown (example `192.168.1.50`) and connect from your client:
+      - `http://192.168.1.50:8000`
+
+   **Option B — Ngrok tunneling (public URL)**
+   1. Install and authenticate ngrok (see https://ngrok.com/)
+   2. Start a tunnel to your local port:
+      ```bash
+      ngrok http 8000
+      ```
+   3. Use the generated `https://...ngrok-free.app` URL as your base endpoint.
+    
 
 ## Run Tests
 ```bash
