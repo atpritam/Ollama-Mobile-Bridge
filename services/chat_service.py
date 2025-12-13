@@ -38,30 +38,31 @@ class ChatService:
 
     @staticmethod
     def preflight_search_check(user_query: str) -> bool:
-        """Pre-flight check: Detect recency/realtime indicators."""
-        query_lower = user_query.lower()
+        q = user_query.lower()
 
-        # Temporal indicators
-        temporal_keywords = ["2025", "2026", "latest", "recent", "current",
-            "today", "yesterday", "this week", "this month", "this year",
-            "now", "right now", "breaking", "last week", "last month"
-        ]
-
-        # Real-time data keywords
-        realtime_keywords = [
+        temporal = {
+            "2025", "2026", "latest", "recent", "current",
+            "today", "yesterday", "this week", "this month",
+            "this year", "now", "right now", "breaking",
+            "last week", "last month",
+        }
+        realtime = {
             "weather", "temperature", "forecast", "stock", "price",
             "news", "election", "score", "won", "elected", "winner",
-            "happening", "live", "update"
-        ]
+            "happening", "live", "update",
+        }
+        date_only = {"today", "yesterday", "tomorrow", "date"}
 
-        has_temporal = any(kw in query_lower for kw in temporal_keywords)
-        has_realtime = any(kw in query_lower for kw in realtime_keywords)
+        has_temporal = any(k in q for k in temporal)
+        if not has_temporal:
+            return False
 
-        if (has_temporal and has_realtime) or has_temporal:
-            app_logger.info(f"Pre-flight: Recency pattern detected in query")
-            return True
+        if not any(k in q for k in realtime):
+            if not any(k in q for k in temporal - date_only):
+                return False
 
-        return False
+        app_logger.info("Pre-flight: Recency pattern detected in query")
+        return True
 
     @staticmethod
     def detect_knowledge_cutoff(response: str) -> bool:
@@ -119,7 +120,7 @@ class ChatService:
         """
         user_context = ChatService._format_user_context(context.user_memory)
         extraction_system_prompt = SEARCH_QUERY_EXTRACTION_PROMPT.format(
-            current_date=datetime.now().strftime("%Y-%m-%d"),
+            current_date=datetime.now().strftime("%d %B %Y"),
             user_context = user_context
         )
 
@@ -170,12 +171,12 @@ class ChatService:
 
         if Config.is_small_model(request.model):
             return SIMPLE_SYSTEM_PROMPT.format(
-                current_date=datetime.now().strftime("%Y-%m-%d"),
+                current_date=datetime.now().strftime("%d %B %Y"),
                 user_context=user_context
             )
 
         return DEFAULT_SYSTEM_PROMPT.format(
-            current_date=datetime.now().strftime("%Y-%m-%d"),
+            current_date=datetime.now().strftime("%d %B %Y"),
             user_context=user_context
         )
 
@@ -345,7 +346,7 @@ class ChatService:
         prompt_template = RECALL_SYNTHESIS_PROMPT if is_recall else SEARCH_RESULT_SYSTEM_PROMPT
 
         search_system_prompt = prompt_template.format(
-            current_date=datetime.now().strftime("%Y-%m-%d"),
+            current_date=datetime.now().strftime("%d %B %Y"),
             user_context=ChatService._format_user_context(context.user_memory),
             search_results=search_results
         )
