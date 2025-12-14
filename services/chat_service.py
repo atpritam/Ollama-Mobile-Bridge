@@ -16,7 +16,8 @@ from utils.constants import (
     RECALL_SYNTHESIS_PROMPT,
     SEARCH_QUERY_EXTRACTION_PROMPT,
     SearchType,
-    Patterns
+    Patterns,
+    SearchFormatValidator
 )
 from config import Config
 from services.weather import WeatherService
@@ -111,6 +112,76 @@ class ChatService:
     def strip_search_id_tag(text: str) -> str:
         """Remove [search_id: N] tag from text."""
         return re.sub(Patterns.SEARCH_ID_TAG, '', text, flags=re.IGNORECASE).strip()
+
+    @staticmethod
+    async def validate_and_execute_search(
+        context: ChatContext,
+        search_type: str,
+        search_query: str,
+        max_retries: int = 3
+    ) -> SearchResult:
+        """
+        Validate search format and execute. If validation fails, retry with query extraction.
+
+        Args:
+            context: ChatContext with request data
+            search_type: Type of search (weather, reddit, google, wikipedia)
+            search_query: The search query
+            max_retries: Maximum retry attempts for extraction
+
+        Returns:
+            SearchResult with search data
+        """
+        # Validate format
+        is_valid, error_msg = SearchFormatValidator.validate_search_format(search_type, search_query)
+
+        if is_valid:
+            # Format is valid, proceed with search
+            app_logger.info(f"Search format validated: {search_type} - '{search_query}'")
+            search_results, source_url, search_id = await ChatService.execute_search(
+                context, search_type, search_query
+            )
+            return SearchResult(
+                performed=True,
+                search_type=search_type,
+                search_query=search_query,
+                search_results=search_results,
+                source_url=source_url,
+                search_id=search_id
+            )
+
+        # Validation failed, log and retry with extraction
+        app_logger.warning(f"Search format validation failed: {error_msg}")
+
+        for attempt in range(1, max_retries + 1):
+            app_logger.info(f"Extraction attempt {attempt}/{max_retries}")
+
+            # Extract proper search query
+            search_result = await ChatService.extract_search_query(context, "")
+
+            # Validate the extracted query
+            is_valid, error_msg = SearchFormatValidator.validate_search_format(
+                search_result.search_type, search_result.search_query
+            )
+
+            if is_valid:
+                return search_result
+            else:
+                app_logger.warning(f"Extraction attempt {attempt} failed: {error_msg}")
+
+        # All retries exhausted, fallback to Google search with original user query
+        app_logger.warning(f"All extraction attempts failed, falling back to Google search with user query")
+        search_results, source_url, search_id = await ChatService.execute_search(
+            context, SearchType.GOOGLE, context.prompt
+        )
+        return SearchResult(
+            performed=True,
+            search_type=SearchType.GOOGLE,
+            search_query=context.prompt,
+            search_results=search_results,
+            source_url=source_url,
+            search_id=search_id
+        )
 
     @staticmethod
     async def extract_search_query(context: ChatContext, original_response: str) -> SearchResult:
@@ -471,16 +542,10 @@ class ChatService:
                     yield step
                 return
             else:
-                # Typed search detected, perform it directly
+                # Typed search detected, validate and execute
                 app_logger.info(f"Search triggered: {search_type} - '{search_query}'")
-                search_results, source_url, search_id = await ChatService.execute_search(context, search_type, search_query)
-                search_result = SearchResult(
-                    performed=True,
-                    search_type=search_type,
-                    search_query=search_query,
-                    search_results=search_results,
-                    source_url=source_url,
-                    search_id=search_id
+                search_result = await ChatService.validate_and_execute_search(
+                    context, search_type, search_query
                 )
                 async for step in ChatService._handle_search_tag_detected(search_result, context):
                     yield step

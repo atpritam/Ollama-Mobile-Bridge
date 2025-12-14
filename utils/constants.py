@@ -13,7 +13,7 @@ ALWAYS use web search when user mentions:
 
 For everything else, answer directly and conversationally from your knowledge.
 
-ONLY AVAILABLE Search formats:
+ONLY AVAILABLE Search FORMATS:
 WEATHER: <city>
 REDDIT: <topic>
 GOOGLE: <query>
@@ -22,15 +22,17 @@ WIKI: <query>
 Prefer REDDIT only for opinions, reviews and discussions.
 
 Previous assistant responses that performed searches include [search_id: N] at the end.
-When user asks for more details or references a previous search result, use RECALL to retrieve that search:
+When user asks for more details or references a previous search result, use RECALL FORMAT to retrieve that search:
 RECALL: <search_id>
+This retrieves the same search content used for that answer.
 
-EXAMPLES (NO explanations. NO other text):
+EXAMPLES (NO explanations, NO other text to be included. Match the FORMAT exactly):
 WEATHER: Boston
 REDDIT: RTX 5080 opinions
+GOOGLE: latest news on apple stock
 RECALL: 5
 
-Either respond with the search query / recall format or your known answer, not both."""
+Either respond with the exact FORMAT or your known answer, not both."""
 
 # Simplified system prompt for small models
 SIMPLE_SYSTEM_PROMPT = """You are a chat assistant. Today's date: {current_date}
@@ -44,7 +46,7 @@ When user references a previous search result, respond with:
 RECALL: <search_id>
 This retrieves the same search content used for that answer.
 
-EXAMPLES (NO explanations. NO other text. TAGS only):
+EXAMPLES (NO explanations, NO other text. TAGS only):
 WEATHER: Boston
 SEARCH: RTX 5080 opinions
 RECALL: 5
@@ -55,7 +57,7 @@ Otherwise, If you know the answer truthfully, just answer it conversationally.""
 SEARCH_QUERY_EXTRACTION_PROMPT = """You are a search query generator. Today's date: {current_date}
 Generate ONE search query in the EXACT format below based on the user's question.
 {user_context}
-ONLY AVAILABLE Search formats:
+ONLY AVAILABLE Search FORMATs:
 WEATHER: <city>
 REDDIT: <topic>
 WIKIPEDIA: <query>
@@ -64,7 +66,7 @@ GOOGLE: <query>
 Prefer REDDIT only for community/People opinions, reviews and discussions.
 Prefer WEATHER for current weather requests.
 
-EXAMPLES (NO explanations. NO other text):
+EXAMPLES (NO explanations, NO other text to be included. Match the FORMAT exactly):
 WEATHER: Boston
 REDDIT: RTX 5080 opinions
 GOOGLE: latest news on apple stock"""
@@ -125,3 +127,48 @@ class Patterns:
         r"i don't know", r"as of my last update in 202\d", r"available yet", r"real-time information",
         r"don't have information", r"occurred after my", r"my training data", r"couldn't find any information",
     ]
+
+
+class SearchFormatValidator:
+    """Validates search query formats before execution."""
+
+    @staticmethod
+    def validate_search_format(search_type: str, query: str) -> tuple[bool, str | None]:
+        """Validate search format based on type."""
+        import re
+
+        if not query or not query.strip():
+            return False, "Query is empty"
+
+        cleaned = query.strip()
+
+        # Check for multiple search tags
+        if re.search(r'(WEATHER|GOOGLE|REDDIT|WIKI|WIKIPEDIA|SEARCH):', cleaned, re.IGNORECASE):
+            return False, "Multiple search tags detected"
+
+        # Type-specific validation
+        if search_type == "weather":
+            # Remove noise words
+            for pattern in [r'^(the\s+)?weather\s+(in|for|at|of)\s+', r'^(current\s+)?weather\s*:?\s*', r'\s+(weather|forecast|temperature|today)$']:
+                cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+            cleaned = cleaned.strip()
+
+            words = cleaned.split()
+            if len(words) > 3:
+                return False, f"Weather city should be 1-3 words, got {len(words)}"
+            if not re.match(r'^[a-zA-Z\s\-\']+$', cleaned):
+                return False, "Weather city contains invalid characters"
+
+        elif search_type == "reddit":
+            if len(cleaned) < 2:
+                return False, "Reddit query too short"
+            if len(cleaned) > 200:
+                return False, "Reddit query too long"
+
+        elif search_type in ["google", "wikipedia"]:
+            if len(cleaned) < 2:
+                return False, "Query too short"
+            if len(cleaned) > 300:
+                return False, "Query too long"
+
+        return True, None

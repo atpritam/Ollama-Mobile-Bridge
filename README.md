@@ -174,7 +174,7 @@ Ollama-Mobile-Bridge/
 
 ## Run Tests
 ```bash
- python -m pytest # 85 tests
+ pytest # 85 tests
 ```
 
 ## API Endpoints

@@ -62,12 +62,13 @@ def test_chat_stream_endpoint_streams_events(mock_orchestrate_flow, configured_a
     assert_sse_event(body, "status", stage="searching", message="Searching google for: test query")
     assert_sse_event(body, "done", full_response="streamed response", search_performed=True, search_id=42, search_type=None, search_query=None)
 
-def test_list_models_endpoint_returns_models(configured_app, auth_headers, mocker):
+@patch("routes.models_route.ollama.AsyncClient")
+def test_list_models_endpoint_returns_models(mock_ollama_client_class, configured_app, auth_headers):
     """Given a configured app, when the /list endpoint is called, it should return available models."""
     mock_ollama_client_instance = AsyncMock()
     mock_ollama_client_instance.list.return_value = {"models": [{"model": "llama3.2:3b"}, {"model": "mistral:7b"}]}
-    mocker.patch("routes.models_route.ollama.AsyncClient", return_value=mock_ollama_client_instance)
-    
+    mock_ollama_client_class.return_value = mock_ollama_client_instance
+
     response = configured_app.get("/list", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == {"models": ["llama3.2:3b", "mistral:7b"]}

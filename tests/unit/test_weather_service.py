@@ -34,7 +34,10 @@ def set_openweathermap_api_key(monkeypatch):
 async def test_get_weather_when_api_call_is_successful(mock_http_client, mock_search_service, monkeypatch, mock_weather_cache):
     """Given a successful API response, get_weather should return formatted weather data."""
     monkeypatch.setattr("utils.http_client.HTTPClientManager.get_search_client", lambda: mock_http_client)
-    mock_http_client.get.return_value = AsyncMock(status_code=200, json=AsyncMock(return_value=DEFAULT_WEATHER_RESPONSE))
+    response_mock = AsyncMock()
+    response_mock.status_code = 200
+    response_mock.json = Mock(return_value=DEFAULT_WEATHER_RESPONSE)
+    mock_http_client.get.return_value = response_mock
 
     weather, source, search_id = await WeatherService.get_weather("Test City", mock_search_service)
 
