@@ -76,6 +76,9 @@ async def stream_with_realtime_sanitization_and_cutoff_detection(
         token_count = 0
         full_response_for_metadata = ""
         tokens_buffered_count = 0
+        tag_pending = False
+        tokens_since_tag_detected = 0
+        max_tokens_after_tag = 15
         
         stream_iterator = None
         try:
@@ -89,11 +92,24 @@ async def stream_with_realtime_sanitization_and_cutoff_detection(
                     tokens_buffered_count += 1
                     first_line_buffer += token
 
-                    line_is_complete = '\n' in token or token_count >= 80
+                    if tag_pending:
+                        tokens_since_tag_detected += 1
+
+                    # Check for query completion delimiters when tag is pending
+                    query_complete = False
+                    if tag_pending:
+                        has_newline = '\n' in token
+                        has_period = '.' in token
+                        max_tokens_reached = tokens_since_tag_detected >= max_tokens_after_tag
+                        
+                        if has_newline or has_period or max_tokens_reached:
+                            query_complete = True
+
+                    line_is_complete = '\n' in token or token_count >= 50
 
                     has_enough_for_tag_check = len(first_line_buffer) >= 7
-                    should_check_tags = has_enough_for_tag_check or line_is_complete
-                    should_check_cutoff = (token_count % 3 == 0) or line_is_complete
+                    should_check_tags = has_enough_for_tag_check and not tag_pending
+                    should_check_cutoff = (token_count % 3 == 0 or line_is_complete) and not tag_pending
                     
                     if should_check_cutoff or should_check_tags:
                         # Check for RECALL tag detection
@@ -101,23 +117,33 @@ async def stream_with_realtime_sanitization_and_cutoff_detection(
                             recall_detected, recall_id, recall_result = await ChatService.detect_and_recall_from_cache(first_line_buffer)
                             if recall_detected:
                                 app_logger.info(f"RECALL tag detected in first line: {recall_id}")
+                                tag_pending = True
                                 tag_detected = True
-                                break
+                                tokens_since_tag_detected = 0
                             
-                            # Check for SEARCH tag detection
-                            search_type, search_query = ChatService._parse_search_command(first_line_buffer)
-                            if search_type:
-                                app_logger.info(f"SEARCH tag detected in first line: {search_type}")
-                                tag_detected = True
-                                break
+                            # Check for SEARCH tag detection (only if no recall detected)
+                            if not tag_pending:
+                                search_type, search_query = ChatService._parse_search_command(first_line_buffer)
+                                if search_type:
+                                    app_logger.info(f"SEARCH tag detected in first line: {search_type}")
+                                    tag_pending = True
+                                    tag_detected = True
+                                    tokens_since_tag_detected = 0
                         
-                        # Check for cutoff detection
-                        if should_check_cutoff and ChatService.detect_knowledge_cutoff(first_line_buffer):
-                            app_logger.warning(f"Knowledge cutoff detected in first line (attempt {attempt}/{max_cutoff_retries})")
-                            cutoff_detected = True
-                            break
+                        # Check for cutoff detection (only if no tag pending)
+                        if should_check_cutoff:
+                            if ChatService.detect_knowledge_cutoff(first_line_buffer):
+                                app_logger.warning(f"Knowledge cutoff detected in first line (attempt {attempt}/{max_cutoff_retries})")
+                                cutoff_detected = True
+                                tag_pending = True
+                                tokens_since_tag_detected = 0
                     
-                    if line_is_complete:
+                    # Break out if query is complete (tag pending and delimiter found)
+                    if query_complete:
+                        break
+                    
+                    # Break out if line is complete and no tags detected at all
+                    if line_is_complete and not tag_pending:
                         first_line_complete = True
                         app_logger.info(f"First line complete ({tokens_buffered_count} tokens buffered), no tags/cutoff detected")
                         
