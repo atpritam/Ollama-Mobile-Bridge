@@ -89,7 +89,7 @@ def configured_app(monkeypatch, mock_ollama_client):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from auth import APIKeyMiddleware
-    from routes import chat, models_route
+    from routes import chat, chat_stream, models_route
     from config import Config
 
     monkeypatch.setattr(APIKeyMiddleware, "API_KEY", "test-key")
@@ -98,9 +98,11 @@ def configured_app(monkeypatch, mock_ollama_client):
     app = FastAPI()
     app.add_middleware(APIKeyMiddleware)
     app.include_router(chat.router)
+    app.include_router(chat_stream.router)
     app.include_router(models_route.router)
 
     monkeypatch.setattr("routes.chat.ollama.AsyncClient", lambda: mock_ollama_client)
+    monkeypatch.setattr("routes.chat_stream.ollama.AsyncClient", lambda: mock_ollama_client)
 
     with TestClient(app) as client:
         yield client

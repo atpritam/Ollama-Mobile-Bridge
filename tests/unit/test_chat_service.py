@@ -152,3 +152,27 @@ async def test_recall_from_cache_when_miss(mock_cache):
         detected, recall_id, result = await ChatService.detect_and_recall_from_cache("RECALL: 7")
         assert detected and recall_id == 7
         assert not result.performed
+
+@pytest.mark.parametrize("response, expected", [
+    ("Here is my answer [search_id: 5]", "Here is my answer"),
+    ("GOOGLE: test query\nSome text", "Some text"),
+    ("RECALL: 10\nResponse", "Response"),
+    ("[search_id: 1] Text in middle [search_id: 2]", "Text in middle"),
+    ("SEARCH: query only", ""),
+])
+def test_sanitize_final_response_removes_all_tags(response, expected):
+    """Given a response with various tags, when sanitize_final_response is called, it should remove all tags."""
+    assert ChatService.sanitize_final_response(response) == expected
+
+
+def test_sanitize_final_response_handles_multiple_tags():
+    """Given a response with multiple tags, when sanitize_final_response is called, it should remove all of them."""
+    response = "GOOGLE: test\nREDDIT: opinions\n[search_id: 5]\nActual content here"
+    expected = "Actual content here"
+    assert ChatService.sanitize_final_response(response) == expected
+
+
+def test_sanitize_final_response_preserves_content():
+    """Given a clean response, when sanitize_final_response is called, it should preserve the content."""
+    response = "This is a detailed answer about the topic with no tags."
+    assert ChatService.sanitize_final_response(response) == response

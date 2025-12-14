@@ -72,13 +72,12 @@ async def test_chat_stream_full_flow_with_search(configured_app, auth_headers, o
     assert_sse_event(full_body, "status", stage="searching", message="Searching google for: latest news on SpaceX launches")
     assert_sse_event(full_body, "status", stage="reading_content", message="Reading content from www.space.com")
 
-    # 2. Verify streamed token events
-    expected_tokens = [
-        "Based ", "on ", "the ", "search, ", "SpaceX ", "had ", "a ", "historic ", 
-        "achievement ", "with ", "its ", "100th ", "launch. "
-    ]
-    for token in expected_tokens:
-        assert_sse_event(full_body, "token", content=token)
+    # 2. Verify streamed token events contain expected content
+    # With buffering, response may be in one chunk or multiple tokens
+    from tests.helpers import assert_token_content_contains
+    expected_content = ["Based", "search", "SpaceX", "historic", "achievement", "100th", "launch"]
+    for content in expected_content:
+        assert_token_content_contains(full_body, content)
 
     # 3. Verify search results were injected into the LLM context
     second_call_messages = ollama_client.chat.call_args_list[1].kwargs["messages"]

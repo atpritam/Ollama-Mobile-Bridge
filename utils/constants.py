@@ -35,9 +35,9 @@ RECALL: 5
 Either respond with the exact FORMAT or your known answer, not both."""
 
 # Simplified system prompt for small models
-SIMPLE_SYSTEM_PROMPT = """You are a chat assistant. Today's date: {current_date}
+SIMPLE_SYSTEM_PROMPT = """You are a conversational chat assistant with external web access. Today's date: {current_date}
 {user_context}
-Given the date, If you don't know something or user wants 'recent/current' info, respond with tags only:
+Given the date, If you don't know something or user wants recent or current info, respond with tags only:
 WEATHER: <city>
 SEARCH: <query>
 
@@ -84,7 +84,7 @@ The following data was scraped from the internet just now:
 
 INSTRUCTIONS:
 - Synthesize the information above to provide a natural answer.
-- Do not mention Knowledge Cut-off.
+- Only include information related to the user's query.
 - Keep responses concise and conversational, which users can read under a minute. MAXIMUM 400 words."""
 
 # System prompt for RECALL synthesis (when user asks follow-up about previous search)
@@ -112,9 +112,9 @@ class SearchType:
 # Regular expression patterns
 class Patterns:
     """Regular expression patterns for search detection."""
-    SEARCH_WITH_TYPE = r'(WEATHER|GOOGLE|REDDIT|WIKI|WIKIPEDIA):\s*(.+?)(?:\n|$)'
-    SEARCH_FALLBACK = r'SEARCH:\s*(.+?)(?:\n|$)'
-    RECALL = r'RECALL:\s*(\d+)(?:\n|$)'
+    SEARCH_WITH_TYPE = r'(WEATHER|GOOGLE|REDDIT|WIKI|WIKIPEDIA):\s*(.+?)(?:\s*\n|\s*$)'
+    SEARCH_FALLBACK = r'SEARCH:\s*(.+?)(?:\s*\n|\s*$)'
+    RECALL = r'RECALL:\s*(\d+)'
     SEARCH_TAG_CLEANUP = r'(WEATHER|GOOGLE|REDDIT|WIKI|WIKIPEDIA|SEARCH|RECALL):\s*.+?(?:\n|$)'
     SEARCH_ID_TAG = r'^\s*\[search_id:\s*\d+\]\s*|\s*\[search_id:\s*\d+\]\s*$'
 
@@ -123,7 +123,7 @@ class Patterns:
         r"don't have access", r"don't have.*(?:up-to-date|recent)", r"can't provide.*current",
         r"information may be outdated", r"(No additional information)", r"don't know.*after",
         r"real-time access", r"No specific", r"no such thing", r"check(?:ing out)? online", r"SEARCH:",
-        r"couldn't find", r"not officially", r"not aware of(?:.*event)?", r"No official", r"not familiar",
+        r"couldn't find", r"not officially", r"not aware of", r"No official", r"not familiar",
         r"i don't know", r"as of my last update in 202\d", r"available yet", r"real-time information",
         r"don't have information", r"occurred after my", r"my training data", r"couldn't find any information",
     ]

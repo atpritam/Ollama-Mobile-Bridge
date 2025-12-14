@@ -26,6 +26,21 @@ def assert_sse_event(body, event_type, **expected_data):
             
     assert found_match, f"No '{event_type}' event found with all expected data: {expected_data} in SSE body:\n{body}"
 
+def assert_token_content_contains(body, expected_text):
+    """Assert that at least one token event contains the expected text."""
+    pattern = re.compile(r'event: token\ndata: ({.*?})\n\n')
+    
+    for match in pattern.finditer(body):
+        event_data_str = match.group(1)
+        try:
+            data = json.loads(event_data_str)
+            if 'content' in data and expected_text in data['content']:
+                return True
+        except json.JSONDecodeError:
+            pass
+    
+    assert False, f"No token event found containing '{expected_text}' in SSE body"
+
 def assert_search_performed(response_data):
     """Assert search metadata in response."""
     assert "search_performed" in response_data and response_data["search_performed"], "Search was not marked as performed."

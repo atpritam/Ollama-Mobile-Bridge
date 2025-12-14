@@ -20,7 +20,7 @@ def test_chat_endpoint_with_invalid_api_key_fails(configured_app):
 @patch("services.chat_service.ChatService.orchestrate_chat_flow")
 def test_chat_endpoint_returns_json_response(mock_orchestrate_flow, configured_app, auth_headers):
     """Given a valid request, when the /chat endpoint is called, it should return a complete JSON response."""
-    async def fake_flow(context):
+    async def fake_flow(context, is_streaming=False):
         yield FlowStep(
             action=FlowAction.RETURN_RESPONSE,
             response="Hi there",
@@ -43,7 +43,7 @@ def test_chat_endpoint_returns_json_response(mock_orchestrate_flow, configured_a
 @patch("services.chat_service.ChatService.orchestrate_chat_flow")
 def test_chat_stream_endpoint_streams_events(mock_orchestrate_flow, configured_app, auth_headers):
     """Given a valid request, when the /chat/stream endpoint is called, it should stream SSE events."""
-    async def fake_flow(context):
+    async def fake_flow(context, is_streaming=False):
         # Yield a search step
         yield FlowStep(action=FlowAction.SEARCH, search_query="test query", search_type="google")
         # Yield the final response

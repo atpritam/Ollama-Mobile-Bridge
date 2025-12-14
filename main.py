@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from config import Config
-from routes import chat, models_route, chat_debug
+from routes import chat, chat_stream, models_route, chat_debug
 from auth import APIKeyMiddleware
 from utils.http_client import HTTPClientManager
 from utils.logger import app_logger
@@ -83,10 +83,11 @@ async def root():
 
 app.include_router(models_route.router, tags=["models"])
 app.include_router(chat.router, tags=["chat"])
+app.include_router(chat_stream.router, tags=["chat"])
 
 app.include_router(chat_debug.router, tags=["debug"])
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)

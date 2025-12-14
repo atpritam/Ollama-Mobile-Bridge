@@ -114,11 +114,30 @@ class ChatService:
         return re.sub(Patterns.SEARCH_ID_TAG, '', text, flags=re.IGNORECASE).strip()
 
     @staticmethod
+    def sanitize_final_response(response: str) -> str:
+        """Sanitize final response by removing all search/recall tags and search_id tags.
+        
+        Returns:
+            Cleaned response string (may be empty if only tags existed)
+        """
+        cleaned = re.sub(
+            Patterns.SEARCH_TAG_CLEANUP,
+            '',
+            response,
+            flags=re.IGNORECASE
+        )
+        
+        cleaned = re.sub(Patterns.SEARCH_ID_TAG, '', cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.strip()
+        
+        return cleaned
+
+    @staticmethod
     async def validate_and_execute_search(
         context: ChatContext,
         search_type: str,
         search_query: str,
-        max_retries: int = 3
+        max_retries: int = None
     ) -> SearchResult:
         """
         Validate search format and execute. If validation fails, retry with query extraction.
@@ -127,11 +146,13 @@ class ChatService:
             context: ChatContext with request data
             search_type: Type of search (weather, reddit, google, wikipedia)
             search_query: The search query
-            max_retries: Maximum retry attempts for extraction
+            max_retries: Maximum retry attempts for extraction (defaults to Config.MAX_SEARCH_QUERY_EXTRACTION_RETRIES)
 
         Returns:
             SearchResult with search data
         """
+        if max_retries is None:
+            max_retries = Config.MAX_SEARCH_QUERY_EXTRACTION_RETRIES
         # Validate format
         is_valid, error_msg = SearchFormatValidator.validate_search_format(search_type, search_query)
 
@@ -467,11 +488,16 @@ class ChatService:
             is_recall=is_recall
         )
 
+        # Get call number for the synthesizing response
+        call_num = context.next_call_number()
+        app_logger.info(f"LLM Call #{call_num}: Synthesizing final response with search results")
+
         # Yield stream response action
         yield FlowStep(
             action=FlowAction.STREAM_RESPONSE,
             messages=final_messages,
-            search_result=search_result
+            search_result=search_result,
+            call_number=call_num
         )
 
     @staticmethod
@@ -482,20 +508,90 @@ class ChatService:
             yield step
 
     @staticmethod
-    async def _handle_knowledge_cutoff(context: ChatContext,assistant_response: str) -> AsyncIterator[FlowStep]:
+    async def _handle_knowledge_cutoff(context: ChatContext, assistant_response: str, max_retries: int = None) -> AsyncIterator[FlowStep]:
         """Handle flow when knowledge cutoff is detected in LLM response."""
-        app_logger.info("Cutoff detected, triggering search query extraction")
+        if max_retries is None:
+            max_retries = Config.MAX_KNOWLEDGE_CUTOFF_RETRIES
+        app_logger.info(f"Knowledge cutoff detected, attempting search query extraction (max {max_retries} tries)")
+        
+        for attempt in range(1, max_retries + 1):
+            app_logger.info(f"Cutoff retry attempt {attempt}/{max_retries}")
+            
+            # Extract search query and perform search
+            search_result = await ChatService.extract_search_query(context, assistant_response)
+            
+            # Prepare messages with search results
+            final_messages = ChatService._prepare_search_response_messages(
+                context,
+                search_result.search_results,
+                is_recall=False
+            )
+            
+            # Get the synthesized response
+            call_num = context.next_call_number()
+            app_logger.info(f"LLM Call #{call_num}: Synthesizing response with search results (cutoff retry {attempt})")
+            
+            response = await context.client.chat(
+                model=context.request.model,
+                messages=final_messages
+            )
+            synthesized_response = response['message']['content']
+            app_logger.info(f"LLM Call #{call_num} completed: Generated {len(synthesized_response)} characters")
+            
+            # Check if cutoff is still detected in the synthesized response
+            if not ChatService.detect_knowledge_cutoff(synthesized_response):
+                app_logger.info(f"Cutoff resolved after {attempt} attempt(s)")
 
-        # Extract search query
-        search_result = await ChatService.extract_search_query(context, assistant_response)
+                yield FlowStep(
+                    action=FlowAction.SEARCH,
+                    search_type=search_result.search_type,
+                    search_query=search_result.search_query
+                )
 
-        # Yield search and response
-        async for step in ChatService._yield_search_and_response(search_result, context):
-            yield step
+                yield FlowStep(
+                    action=FlowAction.RETURN_RESPONSE,
+                    response=synthesized_response,
+                    messages=final_messages,
+                    search_result=search_result,
+                    call_number=call_num
+                )
+                return
+            else:
+                app_logger.warning(f"Cutoff still detected after attempt {attempt}, response: {synthesized_response[:100]}...")
+                assistant_response = synthesized_response
+        
+        # All retries exhausted, return last response as-is
+        app_logger.warning(f"Knowledge cutoff still detected after {max_retries} attempts, returning last response as-is")
+        yield FlowStep(
+            action=FlowAction.RETURN_RESPONSE,
+            response=assistant_response,
+            messages=context.messages,
+            search_result=SearchResult(performed=False),
+            call_number=context.call_count
+        )
+
+    @staticmethod
+    async def _process_streaming_llm_response(context: ChatContext, call_num: int) -> AsyncIterator[FlowStep]:
+        """Process LLM response for streaming endpoint - yields STREAM_RESPONSE directly.
+
+        Args:
+            context: ChatContext with request data
+            call_num: LLM call number for logging
+
+        Yields:
+            FlowStep with STREAM_RESPONSE action to trigger real-time streaming
+        """
+        # Yield STREAM_RESPONSE directly - let streaming handler detect everything
+        yield FlowStep(
+            action=FlowAction.STREAM_RESPONSE,
+            messages=context.messages,
+            search_result=SearchResult(performed=False),
+            call_number=call_num
+        )
 
     @staticmethod
     async def _process_llm_response(context: ChatContext, call_num: int) -> AsyncIterator[FlowStep]:
-        """Process LLM response and handle search/recall/cutoff detection.
+        """Process LLM response (non-streaming) and handle search/recall/cutoff detection.
 
         Args:
             context: ChatContext with request data
@@ -568,8 +664,55 @@ class ChatService:
         )
 
     @staticmethod
-    async def orchestrate_chat_flow(context: ChatContext) -> AsyncIterator[FlowStep]:
-        """Core flow orchestrator that yields decision points."""
+    async def _handle_empty_sanitized_response(context: ChatContext) -> AsyncIterator[FlowStep]:
+        """Handle flow when sanitized response is empty - reroute to start with simple prompt.
+        
+        This uses SIMPLE_SYSTEM_PROMPT.
+        """
+        app_logger.warning("Sanitized response is empty, rerouting to start with simple prompt")
+        
+        user_context = ChatService._format_user_context(context.user_memory)
+        simple_prompt = SIMPLE_SYSTEM_PROMPT.format(
+            current_date=datetime.now().strftime("%d %B %Y"),
+            user_context=user_context
+        )
+        
+        # Build new messages with simple prompt
+        messages = ChatService._build_messages(
+            request=context.request,
+            system_prompt=simple_prompt,
+            validate=False
+        )
+        
+        # Make LLM call
+        call_num = context.next_call_number()
+        app_logger.info(f"LLM Call #{call_num}: Rerouting with simple prompt after empty response")
+        
+        response = await context.client.chat(
+            model=context.request.model,
+            messages=messages
+        )
+        fallback_response = response['message']['content']
+        app_logger.info(f"LLM Call #{call_num} completed: Generated {len(fallback_response)} characters")
+        
+        # Return the fallback response
+        yield FlowStep(
+            action=FlowAction.RETURN_RESPONSE,
+            response=fallback_response,
+            messages=messages,
+            search_result=SearchResult(performed=False),
+            call_number=call_num
+        )
+
+    @staticmethod
+    async def orchestrate_chat_flow(context: ChatContext, is_streaming: bool = False) -> AsyncIterator[FlowStep]:
+        """Core flow orchestrator that yields decision points.
+        
+        Args:
+            context: ChatContext with request data
+            is_streaming: If True, yields STREAM_RESPONSE directly for real-time streaming.
+                         If False, does non-streaming call with tag/cutoff detection.
+        """
         is_small = Config.is_small_model(context.model_name)
 
         if is_small:
@@ -586,9 +729,15 @@ class ChatService:
         log_prefix = "Pre-flight passed, Attempting" if is_small else "Attempting"
         app_logger.info(f"LLM Call #{call_num}: {log_prefix} First Call")
 
-        # Process response and handle search/cutoff detection
-        async for step in ChatService._process_llm_response(context, call_num):
-            yield step
+        # Process response based on streaming mode
+        if is_streaming:
+            # Streaming mode: yield STREAM_RESPONSE directly for real-time detection
+            async for step in ChatService._process_streaming_llm_response(context, call_num):
+                yield step
+        else:
+            # Non-streaming mode: do full call and detect tags/cutoff
+            async for step in ChatService._process_llm_response(context, call_num):
+                yield step
 
     @staticmethod
     def build_response_metadata(request: ChatRequest,messages: list,search_result: SearchResult) -> dict:

@@ -68,6 +68,10 @@ class Config:
     CACHE_USE_SYNONYMS: bool = True
     CACHE_MAX_SYNONYMS: int = 8
 
+    # Retry Attempt Settings
+    MAX_SEARCH_QUERY_EXTRACTION_RETRIES: int = 3
+    MAX_KNOWLEDGE_CUTOFF_RETRIES: int = 3
+
     @classmethod
     def extract_model_param_size(cls, model_name: str) -> float | None:
         """Extract parameter size from model name."""
