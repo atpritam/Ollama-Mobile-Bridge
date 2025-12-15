@@ -42,7 +42,7 @@ The system automatically adjusts reasoning depth and tool usage based on the mod
 
 ## Architecture
 
-The core logic resides in `services/chat_service.py`, which orchestrates a flow of deciding whether to search the web, recall past information from a smart cache, or answer from the model's own knowledge. Key supporting components include a robust web scraper (`services/search.py`), an intelligent, similarity-aware persistent cache (`utils/cache.py`), and a critical context window manager (`utils/token_manager.py`).
+The core logic resides in `services/chat_service.py`, which orchestrates a flow of deciding whether to search the web, recall past information from a smart cache, or answer from the model's own knowledge. Streaming operations are handled by `services/stream_service.py`, which manages real-time token delivery, sanitization, tools and cutoff detection. Key supporting components include a robust web scraper (`services/search.py`), an intelligent, similarity-aware persistent cache (`utils/cache.py`), and a critical context window manager (`utils/token_manager.py`).
 
 ```
 Ollama-Mobile-Bridge/
@@ -54,10 +54,12 @@ Ollama-Mobile-Bridge/
 │   ├── api_models.py            # Pydantic API request/response models
 │   └── chat_models.py           # Internal data structures
 ├── routes/
-│   ├── chat.py                  # Chat endpoints (standard & streaming)
+│   ├── chat.py                  # Standard chat endpoint
+│   ├── chat_stream.py           # Streaming chat endpoint
 │   └── models_route.py          # Model listing endpoints
 ├── services/
 │   ├── chat_service.py          # Core orchestration logic & decision flow
+│   ├── stream_service.py        # Streaming mechanics & real-time sanitization/tool-detection
 │   ├── search.py                # Brave Search API integration & web scraping
 │   └── weather.py               # OpenWeatherMap integration
 └── utils/
@@ -67,6 +69,7 @@ Ollama-Mobile-Bridge/
     ├── http_client.py           # httpx connection pooling
     ├── token_manager.py         # Context window and token management
     ├── cache.py                 # Search result caching & similarity detection
+    ├── streaming_sanitizer.py   # Real-time token sanitization
     └── text_similarity.py       # Query similarity algorithms
 ```
 
@@ -221,10 +224,13 @@ X-API-Key: app_api_key
 }
 ```
 
-The streaming endpoint returns Server-Sent Events:
-- `event: status`: The current stage (`thinking`, `searching_google`, `generating`).
-- `event: token`: A piece of the response.
-- `event: done`: The final metadata object.
+The streaming endpoint returns Server-Sent Events (SSE):
+
+**Event Types:**
+- `event: status` - Current processing stage with optional message
+- `event: token` - Streamed response tokens
+- `event: done` - Final metadata object
+- `event: error` - Error information
 
 ### Example API Response
 ```json
