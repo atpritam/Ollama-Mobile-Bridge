@@ -172,6 +172,8 @@ class StreamService:
                     if first_line_complete or skip_first_line_buffering:
                         sanitized = sanitizer.process_token(token)
                         if sanitized:
+                            # Add sanitized content to full response for metadata
+                            full_response_for_metadata += sanitized
                             yield StreamService.send_sse_event("token", {"content": sanitized})
             
             finally:
@@ -195,6 +197,8 @@ class StreamService:
 
                 if first_line_buffer and not first_line_complete and not skip_first_line_buffering and not tag_detected and not cutoff_detected:
                     app_logger.info(f"Stream ended while buffering ({tokens_buffered_count} tokens), outputting verified clean buffer")
+                    # Add buffered content to full response for metadata
+                    full_response_for_metadata += first_line_buffer
                     yield StreamService.send_sse_event("token", {"content": first_line_buffer})
                 elif tag_detected and tag_detected_at_token:
                     app_logger.info(f"Tag detected at token {tag_detected_at_token}/{tokens_buffered_count}, buffer not output (will process tag)")
