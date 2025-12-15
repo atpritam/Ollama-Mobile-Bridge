@@ -192,12 +192,6 @@ class StreamService:
                             tag_detected = True
                             tag_detected_at_token = token_count
                             full_response_for_metadata = ""
-                    
-                    if not tag_detected:
-                        if ChatService.detect_knowledge_cutoff(full_response_for_metadata):
-                            app_logger.warning(f"Knowledge cutoff detected in final check")
-                            cutoff_detected = True
-                            tag_detected_at_token = token_count
 
                 if first_line_buffer and not first_line_complete and not skip_first_line_buffering and not tag_detected and not cutoff_detected:
                     app_logger.info(f"Stream ended while buffering ({tokens_buffered_count} tokens), outputting verified clean buffer")
