@@ -87,8 +87,6 @@ async def chat_stream(request: ChatRequest):
 
                     # Stream final response with real-time sanitization
                     yield StreamService.send_sse_event("status", {"stage": "generating"})
-                    
-                    # Use call number from orchestrator step (already incremented)
                     call_num = step.call_number
                     
                     async for event in StreamService.stream_with_realtime_sanitization_and_cutoff_detection(

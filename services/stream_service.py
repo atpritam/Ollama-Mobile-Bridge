@@ -158,16 +158,14 @@ class StreamService:
                                 first_line_complete = True
                                 app_logger.info(f"First line complete ({tokens_buffered_count} tokens buffered), no tags/cutoff detected")
                                 
-                                # Add verified clean buffer to full response
+                                # Add verified clean buffer to full response for metadata
                                 full_response_for_metadata += first_line_buffer
-                                
                                 # First line verified clean - output directly
                                 yield StreamService.send_sse_event("token", {"content": first_line_buffer})
                                 
                                 continue
                     else:
-                        if not tag_pending:
-                            full_response_for_metadata += token
+                        pass
 
                     if first_line_complete or skip_first_line_buffering:
                         sanitized = sanitizer.process_token(token)
@@ -322,6 +320,5 @@ class StreamService:
 
             metadata = ChatService.build_response_metadata(request, messages, search_result)
             metadata["full_response"] = full_response_for_metadata.rstrip()
-            metadata["cutoff_retries"] = attempt - 1 if cutoff_detected else 0
             yield StreamService.send_sse_event("done", metadata)
             return
