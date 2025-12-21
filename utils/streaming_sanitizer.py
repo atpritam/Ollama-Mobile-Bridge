@@ -71,8 +71,6 @@ class StreamingSanitizer:
                 return pre_tag
         
         # Check for potential tag prefixes at the end of buffer
-        # Start from longest possible suffix to shortest
-        # We want to find the longest suffix that's a valid tag prefix
         for i in range(len(self.buffer), 0, -1):
             suffix = self.buffer[-i:]
             if self._is_potential_tag_prefix(suffix):

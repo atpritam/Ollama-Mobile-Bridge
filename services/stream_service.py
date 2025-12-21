@@ -115,7 +115,11 @@ class StreamService:
                                     break
                         
                         # Check at token milestones for cutoff
-                        line_is_complete = '\n' in token or token_count >= 100
+                        line_is_complete = (
+                            '\n' in token
+                            or tokens_buffered_count >= 100
+                            or first_line_buffer.count('.') >= 2
+                        )
                         should_check_cutoff = (line_is_complete or len(first_line_buffer) >= 15) and not tag_pending
                         
                         if should_check_cutoff or should_check_tags or buffer_has_tag_prefix:
